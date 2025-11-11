@@ -2,10 +2,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 import uvicorn
 
-from utils.ai_detection_utils import classify_text_hf
+from utils.ai_detection_utils import classify_text_hf, classify_text_ensemble
 from utils.text_humanizer import humanize_text_minimal
 from utils.model_loaders import get_available_detectors
 
@@ -30,7 +30,7 @@ class TextInput(BaseModel):
 
 class DetectInput(BaseModel):
     text: str
-    detector_model: Optional[str] = 'gpt2'  # 'gpt2' or 'chatgpt'
+    detector_model: Optional[str] = 'gpt2'  # 'gpt2', 'chatgpt', or 'ensemble'
     threshold: Optional[float] = 0.8
     
 class HumanizeInput(BaseModel):
@@ -59,7 +59,7 @@ class DetectResponse(BaseModel):
     text: str
     classification_results: Dict[str, str]
     percentages: Dict[str, float]
-    summary: Dict[str, float]
+    summary: Dict[str, Any]  # Allow mixed types (float and str)
 
 @app.get("/")
 def root():
@@ -178,19 +178,24 @@ def detect_ai_text_endpoint(data: DetectInput):
     Detect AI-generated content in text with model selection.
     
     - **text**: The text to analyze
-    - **detector_model**: Choose detector - 'gpt2' (default, fast, good for older AI) or 'chatgpt' (better for GPT-3.5/4)
-    - **threshold**: Confidence threshold (0.0-1.0, default 0.8)
+    - **detector_model**: Choose detector - 'gpt2' (fast), 'chatgpt' (modern AI), or 'ensemble' (most accurate)
+    - **threshold**: Confidence threshold (0.0-1.0, default 0.8) - try 0.5-0.6 for more sensitivity
     
     **Model Comparison:**
     - **gpt2** (roberta-base-openai-detector):
-      - Faster, smaller memory (~500MB)
+      - Fast, smaller memory (~500MB)
       - Best for: GPT-2, GPT-3, older AI content
-      - Accuracy on GPT-4: ~60-70%
+      - Proven accuracy in practice
     
     - **chatgpt** (Hello-SimpleAI/chatgpt-detector-roberta):
-      - Better on modern AI (~600MB)
-      - Best for: GPT-3.5, GPT-4, ChatGPT, Claude
-      - Accuracy on GPT-4: ~85-90%
+      - Trained on ChatGPT outputs (~600MB)
+      - May need threshold adjustment (try 0.5-0.6)
+      - Variable performance - test first!
+    
+    - **ensemble** (RECOMMENDED):
+      - Uses BOTH models and votes
+      - Highest accuracy, catches what either model misses
+      - Slower but most reliable (~1.1GB memory)
     
     Returns classification for each sentence and overall percentages.
     """
@@ -198,7 +203,7 @@ def detect_ai_text_endpoint(data: DetectInput):
         raise HTTPException(status_code=400, detail="Text input cannot be empty")
     
     # Validate detector model
-    valid_models = ['gpt2', 'chatgpt']
+    valid_models = ['gpt2', 'chatgpt', 'ensemble']
     if data.detector_model not in valid_models:
         raise HTTPException(status_code=400, detail=f"detector_model must be one of: {', '.join(valid_models)}")
     
@@ -207,15 +212,23 @@ def detect_ai_text_endpoint(data: DetectInput):
         raise HTTPException(status_code=400, detail="threshold must be between 0.0 and 1.0")
     
     try:
-        classification_map, percentages = classify_text_hf(
-            data.text, 
-            threshold=data.threshold,
-            detector_model=data.detector_model
-        )
+        # Use ensemble if requested
+        if data.detector_model == 'ensemble':
+            classification_map, percentages = classify_text_ensemble(
+                data.text,
+                threshold=data.threshold
+            )
+        else:
+            classification_map, percentages = classify_text_hf(
+                data.text, 
+                threshold=data.threshold,
+                detector_model=data.detector_model
+            )
         
         # Calculate overall AI percentage
         ai_percentage = percentages.get("AI-generated", 0) + percentages.get("AI-generated & AI-refined", 0)
         human_percentage = percentages.get("Human-written", 0) + percentages.get("Human-written & AI-refined", 0)
+        uncertain = percentages.get("Uncertain (models disagree)", 0)
         
         return {
             "text": data.text,
