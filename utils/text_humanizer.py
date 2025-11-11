@@ -87,20 +87,67 @@ contraction_map = {
     "'ve": " have", "'d": " would", "'m": " am"
 }
 
-ACADEMIC_TRANSITIONS = [
-    "Moreover,",
-    "Additionally,",
-    "Furthermore,",
-    "Hence,",
-    "Therefore,",
-    "Consequently,",
-    "Nonetheless,",
-    "Nevertheless,",
-    "In contrast,",
-    "On the other hand,",
-    "In addition,",
-    "As a result,",
-]
+# Context-aware transitions organized by relationship
+ACADEMIC_TRANSITIONS = {
+    'addition': [
+        "Moreover,", "Additionally,", "Furthermore,", "In addition,",
+        "Besides,", "What's more,", "Also,", "Likewise,"
+    ],
+    'contrast': [
+        "However,", "Nevertheless,", "Nonetheless,", "In contrast,",
+        "On the other hand,", "Conversely,", "Yet,", "Still,"
+    ],
+    'cause': [
+        "Therefore,", "Thus,", "Hence,", "Consequently,",
+        "As a result,", "Accordingly,", "For this reason,"
+    ],
+    'emphasis': [
+        "Indeed,", "In fact,", "Notably,", "Particularly,",
+        "Especially,", "Significantly,"
+    ],
+    'general': [  # Fallback
+        "Moreover,", "Additionally,", "Furthermore,", "However,"
+    ]
+}
+
+# Technical/domain terms that should NEVER be replaced
+PROTECTED_TERMS = {
+    # Programming
+    'algorithm', 'function', 'method', 'class', 'array', 'string', 'integer',
+    'boolean', 'float', 'variable', 'constant', 'parameter', 'argument',
+    'loop', 'iteration', 'recursion', 'pointer', 'reference', 'object',
+    'instance', 'interface', 'implementation', 'inheritance', 'polymorphism',
+    
+    # Data structures
+    'list', 'queue', 'stack', 'tree', 'graph', 'node', 'edge', 'heap',
+    
+    # CS concepts
+    'database', 'query', 'index', 'cache', 'buffer', 'memory', 'cpu',
+    'thread', 'process', 'socket', 'protocol', 'network', 'server', 'client',
+    
+    # Math/Stats
+    'equation', 'formula', 'theorem', 'proof', 'hypothesis', 'correlation',
+    'regression', 'variance', 'deviation', 'mean', 'median', 'mode',
+    'probability', 'statistic', 'distribution',
+    
+    # Research terms
+    'methodology', 'participant', 'variable', 'control', 'experiment',
+    'sample', 'population', 'dataset', 'metric', 'measure',
+    
+    # General technical
+    'system', 'model', 'framework', 'architecture', 'structure',
+    'component', 'module', 'layer', 'interface', 'endpoint'
+}
+
+# Words that are too common/generic to replace
+SKIP_COMMON_WORDS = {
+    'thing', 'way', 'time', 'make', 'get', 'go', 'come', 'take',
+    'see', 'look', 'use', 'find', 'give', 'tell', 'ask', 'work',
+    'seem', 'feel', 'try', 'leave', 'call', 'good', 'new', 'first',
+    'last', 'long', 'great', 'little', 'own', 'other', 'old', 'right',
+    'big', 'high', 'different', 'small', 'large', 'next', 'early',
+    'young', 'important', 'few', 'public', 'bad', 'same', 'able'
+}
 
 def expand_contractions(sentence):
     tokens = word_tokenize(sentence)
@@ -121,35 +168,107 @@ def expand_contractions(sentence):
     return " ".join(expanded)
 
 def replace_synonyms(sentence, p_syn=0.2):
+    """Smart synonym replacement with technical term protection and quality filtering."""
     if not nlp:
         return sentence
 
     doc = nlp(sentence)
     new_tokens = []
+    
     for token in doc:
+        # Skip citations
         if "[[REF_" in token.text:
             new_tokens.append(token.text)
             continue
-        if token.pos_ in ["ADJ", "NOUN", "VERB", "ADV"] and wordnet.synsets(token.text):
-            if random.random() < p_syn:
-                synonyms = get_synonyms(token.text, token.pos_)
-                if synonyms:
-                    new_tokens.append(random.choice(synonyms))
-                else:
-                    new_tokens.append(token.text)
+        
+        # Skip punctuation and non-words
+        if token.pos_ not in ["ADJ", "NOUN", "VERB", "ADV"]:
+            new_tokens.append(token.text)
+            continue
+        
+        # NEW: Skip protected technical terms
+        if token.text.lower() in PROTECTED_TERMS:
+            new_tokens.append(token.text)
+            continue
+        
+        # NEW: Skip very common/generic words
+        if token.text.lower() in SKIP_COMMON_WORDS:
+            new_tokens.append(token.text)
+            continue
+        
+        # NEW: Skip proper nouns (names, places, etc.)
+        if token.pos_ == "PROPN":
+            new_tokens.append(token.text)
+            continue
+        
+        # Try replacement with probability
+        if wordnet.synsets(token.text) and random.random() < p_syn:
+            synonyms = get_smart_synonyms(token.text, token.pos_, sentence)
+            if synonyms:
+                new_tokens.append(random.choice(synonyms))
             else:
                 new_tokens.append(token.text)
         else:
             new_tokens.append(token.text)
+    
     return " ".join(new_tokens)
 
-def add_academic_transition(sentence, p_transition=0.2):
-    if random.random() < p_transition:
-        transition = random.choice(ACADEMIC_TRANSITIONS)
-        return f"{transition} {sentence}"
-    return sentence
+def add_academic_transition(sentence, prev_sentence=None, used_transitions=None, p_transition=0.2):
+    """
+    Context-aware transition addition that matches sentence relationship.
+    Tracks used transitions to avoid repetition.
+    """
+    if random.random() >= p_transition:
+        return sentence
+    
+    # Don't add if sentence already starts with a transition
+    first_word = sentence.split()[0] if sentence.split() else ""
+    existing_transitions = ['moreover', 'however', 'therefore', 'furthermore', 
+                           'additionally', 'consequently', 'nevertheless', 'thus',
+                           'hence', 'indeed', 'besides', 'likewise', 'also']
+    if first_word.lower().rstrip(',') in existing_transitions:
+        return sentence
+    
+    # Determine appropriate transition type based on previous sentence
+    if prev_sentence and nlp:
+        relationship = detect_sentence_relationship(prev_sentence, sentence)
+        
+        # Map relationship to transition type
+        if relationship == 'contrast':
+            transition_type = 'contrast'
+        elif relationship == 'cause':
+            transition_type = 'cause'
+        elif relationship in ['addition', 'none']:
+            transition_type = 'addition'
+        else:
+            transition_type = 'general'
+    else:
+        transition_type = 'general'
+    
+    # Get appropriate transitions for this type
+    available_transitions = ACADEMIC_TRANSITIONS.get(transition_type, ACADEMIC_TRANSITIONS['general'])
+    
+    # Filter out recently used transitions if tracking is enabled
+    if used_transitions is not None:
+        unused = [t for t in available_transitions if t not in used_transitions]
+        if unused:
+            available_transitions = unused
+    
+    # Select and track transition
+    transition = random.choice(available_transitions)
+    if used_transitions is not None:
+        used_transitions.add(transition)
+        # Keep only last 3 transitions in memory
+        if len(used_transitions) > 3:
+            used_transitions.pop()
+    
+    return f"{transition} {sentence}"
 
-def get_synonyms(word, pos):
+def get_smart_synonyms(word, pos, sentence_context=""):
+    """
+    Get quality-filtered synonyms that fit the context.
+    Filters out archaic, rare, and inappropriate synonyms.
+    """
     wn_pos = None
     if pos.startswith("ADJ"):
         wn_pos = wordnet.ADJ
@@ -160,14 +279,59 @@ def get_synonyms(word, pos):
     elif pos.startswith("VERB"):
         wn_pos = wordnet.VERB
 
-    synonyms = set()
-    if wn_pos:
-        for syn in wordnet.synsets(word, pos=wn_pos):
-            for lemma in syn.lemmas():
-                lemma_name = lemma.name().replace("_", " ")
-                if lemma_name.lower() != word.lower():
-                    synonyms.add(lemma_name)
-    return list(synonyms)
+    if not wn_pos:
+        return []
+    
+    synonyms = []
+    word_lower = word.lower()
+    
+    # Get synsets (meaning groups)
+    synsets = wordnet.synsets(word, pos=wn_pos)
+    
+    # Only use the first 2 synsets (most common meanings)
+    for syn in synsets[:2]:
+        for lemma in syn.lemmas():
+            lemma_name = lemma.name().replace("_", " ")
+            lemma_lower = lemma_name.lower()
+            
+            # Skip if same as original
+            if lemma_lower == word_lower:
+                continue
+            
+            # NEW: Quality filters
+            
+            # Skip very long synonyms (likely archaic/rare)
+            if len(lemma_name) > len(word) + 5:
+                continue
+            
+            # Skip if contains underscores or hyphens (often technical/rare)
+            if '_' in lemma_name or '-' in lemma_name:
+                continue
+            
+            # Skip if all caps (acronyms)
+            if lemma_name.isupper():
+                continue
+            
+            # Skip if has numbers
+            if any(char.isdigit() for char in lemma_name):
+                continue
+            
+            # Skip very rare/archaic words (heuristic: uncommon letter combos)
+            if any(rare in lemma_lower for rare in ['ae', 'oe', 'ough', 'augh']):
+                continue
+            
+            # Prefer shorter synonyms (usually more common)
+            synonyms.append((lemma_name, lemma.count()))
+    
+    # Sort by frequency (WordNet lemma count) and prefer common ones
+    synonyms.sort(key=lambda x: x[1], reverse=True)
+    
+    # Return top 5 most common synonyms
+    return [syn[0] for syn in synonyms[:5]]
+
+def get_synonyms(word, pos):
+    """Legacy function for backward compatibility."""
+    return get_smart_synonyms(word, pos, "")
 
 ########################################
 # NEW: Intelligent Sentence Combining
@@ -175,13 +339,38 @@ def get_synonyms(word, pos):
 def detect_sentence_relationship(sent1, sent2):
     """
     Analyze the logical relationship between two sentences.
-    Returns: 'addition', 'contrast', 'cause', or 'none'
+    Returns: 'addition', 'contrast', 'cause', 'none', or 'unsafe'
     """
     if not nlp:
         return 'addition'  # Safe default
     
     sent1_lower = sent1.lower()
     sent2_lower = sent2.lower()
+    
+    # Parse both sentences
+    doc1 = nlp(sent1)
+    doc2 = nlp(sent2)
+    
+    # NEW: Check for topic shift indicators (UNSAFE to combine)
+    topic_shift_indicators = [
+        'meanwhile', 'separately', 'unrelated', 'on another note',
+        'switching topics', 'changing subjects', 'in other news',
+        'first', 'second', 'third', 'finally', 'lastly',  # Sequential markers
+        'step 1', 'step 2', 'step 3'
+    ]
+    
+    for indicator in topic_shift_indicators:
+        if indicator in sent2_lower:
+            return 'unsafe'  # Don't combine
+    
+    # NEW: Check for subject continuity
+    subject1 = get_sentence_subject(doc1)
+    subject2 = get_sentence_subject(doc2)
+    
+    # If subjects are completely different and unrelated, be cautious
+    if subject1 and subject2:
+        if not are_subjects_related(subject1, subject2, sent1_lower, sent2_lower):
+            return 'unsafe'  # Different topics
     
     # Contrast indicators
     contrast_words = ['however', 'but', 'although', 'despite', 'yet', 
@@ -196,14 +385,82 @@ def detect_sentence_relationship(sent1, sent2):
         return 'cause'
     
     # Check if sent2 starts with pronoun referring to sent1 subject
-    if nlp:
-        doc2 = nlp(sent2)
-        first_token = doc2[0] if len(doc2) > 0 else None
-        if first_token and first_token.pos_ == 'PRON' and first_token.text.lower() in ['it', 'this', 'these', 'they']:
-            return 'addition'  # Continuation/elaboration
+    first_token = doc2[0] if len(doc2) > 0 else None
+    if first_token and first_token.pos_ == 'PRON' and first_token.text.lower() in ['it', 'this', 'these', 'they', 'that']:
+        return 'addition'  # Clear continuation/elaboration
     
-    # Default: addition (safe connector)
-    return 'addition'
+    # Check if both sentences share common nouns/entities (same topic)
+    if share_common_entities(doc1, doc2):
+        return 'addition'  # Same topic
+    
+    # If we can't determine relationship, be safe
+    return 'none'  # Don't combine unless clear relationship
+
+def get_sentence_subject(doc):
+    """Extract the main subject of a sentence."""
+    for token in doc:
+        if token.dep_ in ["nsubj", "nsubjpass"]:
+            return token.text.lower()
+    return None
+
+def are_subjects_related(subj1, subj2, sent1, sent2):
+    """Check if two subjects are related enough to combine sentences."""
+    
+    # Same subject
+    if subj1 == subj2:
+        return True
+    
+    # Pronoun in second sentence (clear reference)
+    if subj2 in ['it', 'this', 'that', 'these', 'they', 'he', 'she']:
+        return True
+    
+    # Check if both subjects are in same domain
+    # Research-related subjects
+    research_subjects = ['study', 'research', 'analysis', 'experiment', 'finding', 
+                        'result', 'data', 'evidence', 'investigation', 'trial']
+    if subj1 in research_subjects and subj2 in research_subjects:
+        return True
+    
+    # Tech-related subjects  
+    tech_subjects = ['system', 'algorithm', 'method', 'function', 'api', 
+                    'application', 'software', 'program', 'model', 'network']
+    if subj1 in tech_subjects and subj2 in tech_subjects:
+        return True
+    
+    # AI/ML subjects
+    ai_subjects = ['ai', 'ml', 'model', 'network', 'algorithm', 'learning', 
+                  'intelligence', 'neural', 'deep', 'machine']
+    
+    # Check if subjects contain AI-related terms
+    if any(ai in subj1 for ai in ai_subjects) and any(ai in subj2 for ai in ai_subjects):
+        return True
+    
+    # Otherwise, subjects seem unrelated
+    return False
+
+def share_common_entities(doc1, doc2):
+    """Check if two sentences share common named entities or key nouns."""
+    
+    # Extract named entities
+    entities1 = set([ent.text.lower() for ent in doc1.ents])
+    entities2 = set([ent.text.lower() for ent in doc2.ents])
+    
+    # Share any entities?
+    if entities1 & entities2:
+        return True
+    
+    # Extract important nouns (not pronouns)
+    nouns1 = set([token.text.lower() for token in doc1 
+                  if token.pos_ in ["NOUN", "PROPN"] and token.text.lower() not in ['thing', 'way', 'time']])
+    nouns2 = set([token.text.lower() for token in doc2 
+                  if token.pos_ in ["NOUN", "PROPN"] and token.text.lower() not in ['thing', 'way', 'time']])
+    
+    # Share significant nouns?
+    common_nouns = nouns1 & nouns2
+    if len(common_nouns) > 0:
+        return True
+    
+    return False
 
 def get_appropriate_connector(relationship):
     """
@@ -223,9 +480,14 @@ def combine_short_sentences(sent1, sent2):
     """
     Intelligently combine two sentences with appropriate connector.
     Only combines if it makes semantic sense.
+    Returns: (combined_sentence, success_flag)
     """
     # Get relationship
     relationship = detect_sentence_relationship(sent1, sent2)
+    
+    # NEW: Don't combine if unsafe or no clear relationship
+    if relationship in ['unsafe', 'none']:
+        return None, False  # Signal not to combine
     
     # Get appropriate connector
     connector = get_appropriate_connector(relationship)
@@ -236,7 +498,7 @@ def combine_short_sentences(sent1, sent2):
     
     combined = f"{sent1_clean} {connector} {sent2_lower}"
     
-    return combined
+    return combined, True
 
 def vary_sentence_length(sentences, p_combine=0.3):
     """
@@ -265,9 +527,16 @@ def vary_sentence_length(sentences, p_combine=0.3):
             
             # Don't combine if result would be too long (> 20 words)
             if word_count + next_word_count <= 20:
-                combined = combine_short_sentences(sent, next_sent)
-                new_sentences.append(combined)
-                i += 2  # Skip next sentence
+                combined, success = combine_short_sentences(sent, next_sent)
+                
+                # NEW: Only combine if relationship detection succeeded
+                if success and combined:
+                    new_sentences.append(combined)
+                    i += 2  # Skip next sentence
+                else:
+                    # Relationship unclear or unsafe - keep separate
+                    new_sentences.append(sent)
+                    i += 1
             else:
                 new_sentences.append(sent)
                 i += 1
@@ -704,23 +973,34 @@ def add_quantifier_hedging(sentence, doc):
 ########################################
 # Step 3: Enhanced "Humanize" line-by-line
 ########################################
-def minimal_humanize_line(line, p_syn=0.2, p_trans=0.2, p_hedge=0.15):
+def minimal_humanize_line(line, prev_line=None, used_transitions=None, p_syn=0.2, p_trans=0.2, p_hedge=0.15):
     line = expand_contractions(line)
     line = replace_synonyms(line, p_syn=p_syn)
-    line = add_hedging(line, p_hedge=p_hedge)  # NEW
-    line = add_academic_transition(line, p_transition=p_trans)
+    line = add_hedging(line, p_hedge=p_hedge)
+    line = add_academic_transition(line, prev_sentence=prev_line, used_transitions=used_transitions, p_transition=p_trans)
     return line
 
 def minimal_rewriting(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=0.3):
     lines = sent_tokenize(text)
     
-    # Apply transformations to each sentence
-    out_lines = [
-        minimal_humanize_line(ln, p_syn=p_syn, p_trans=p_trans, p_hedge=p_hedge) 
-        for ln in lines
-    ]
+    # Track used transitions to avoid repetition
+    used_transitions = set()
     
-    # NEW: Intelligently vary sentence length
+    # Apply transformations to each sentence with context
+    out_lines = []
+    for i, ln in enumerate(lines):
+        prev_ln = lines[i-1] if i > 0 else None
+        transformed = minimal_humanize_line(
+            ln, 
+            prev_line=prev_ln,
+            used_transitions=used_transitions,
+            p_syn=p_syn, 
+            p_trans=p_trans, 
+            p_hedge=p_hedge
+        )
+        out_lines.append(transformed)
+    
+    # Intelligently vary sentence length
     out_lines = vary_sentence_length(out_lines, p_combine=p_combine)
     
     return " ".join(out_lines)
