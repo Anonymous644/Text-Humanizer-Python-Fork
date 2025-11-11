@@ -80,6 +80,72 @@ def restore_citations(text, placeholder_map):
     return restored
 
 ########################################
+# Style Profiles - Maximum Humanization with Different Styles
+########################################
+STYLE_PROFILES = {
+    'academic': {
+        'synonym_probability': 0.35,
+        'transition_probability': 0.40,
+        'hedging_probability': 0.30,
+        'sentence_combine_probability': 0.35,
+        'synonym_formality': 'formal',
+        'transition_style': 'academic',
+        'expand_contractions': True,
+        'add_contractions': False,
+    },
+    'formal': {
+        'synonym_probability': 0.35,
+        'transition_probability': 0.35,
+        'hedging_probability': 0.25,
+        'sentence_combine_probability': 0.30,
+        'synonym_formality': 'formal',
+        'transition_style': 'formal',
+        'expand_contractions': True,
+        'add_contractions': False,
+    },
+    'casual': {
+        'synonym_probability': 0.40,
+        'transition_probability': 0.35,
+        'hedging_probability': 0.10,
+        'sentence_combine_probability': 0.45,
+        'synonym_formality': 'casual',
+        'transition_style': 'casual',
+        'expand_contractions': False,
+        'add_contractions': True,
+    },
+    'technical': {
+        'synonym_probability': 0.30,
+        'transition_probability': 0.30,
+        'hedging_probability': 0.25,
+        'sentence_combine_probability': 0.25,
+        'synonym_formality': 'neutral',
+        'transition_style': 'technical',
+        'expand_contractions': True,
+        'add_contractions': False,
+    },
+    'creative': {
+        'synonym_probability': 0.45,
+        'transition_probability': 0.40,
+        'hedging_probability': 0.15,
+        'sentence_combine_probability': 0.40,
+        'synonym_formality': 'varied',
+        'transition_style': 'creative',
+        'expand_contractions': False,
+        'add_contractions': False,
+    },
+    'balanced': {  # Default
+        'synonym_probability': 0.30,
+        'transition_probability': 0.30,
+        'hedging_probability': 0.20,
+        'sentence_combine_probability': 0.35,
+        'synonym_formality': 'neutral',
+        'transition_style': 'general',
+        'expand_contractions': True,
+        'add_contractions': False,
+    }
+}
+
+########################################
 # Step 2: Expansions, Synonyms, & Transitions
 ########################################
 contraction_map = {
@@ -87,27 +153,59 @@ contraction_map = {
     "'ve": " have", "'d": " would", "'m": " am"
 }
 
-# Context-aware transitions organized by relationship
-ACADEMIC_TRANSITIONS = {
-    'addition': [
-        "Moreover,", "Additionally,", "Furthermore,", "In addition,",
-        "Besides,", "What's more,", "Also,", "Likewise,"
-    ],
-    'contrast': [
-        "However,", "Nevertheless,", "Nonetheless,", "In contrast,",
-        "On the other hand,", "Conversely,", "Yet,", "Still,"
-    ],
-    'cause': [
-        "Therefore,", "Thus,", "Hence,", "Consequently,",
-        "As a result,", "Accordingly,", "For this reason,"
-    ],
-    'emphasis': [
-        "Indeed,", "In fact,", "Notably,", "Particularly,",
-        "Especially,", "Significantly,"
-    ],
-    'general': [  # Fallback
-        "Moreover,", "Additionally,", "Furthermore,", "However,"
-    ]
+# Reverse mapping for adding contractions (casual style)
+expansion_to_contraction = {
+    "do not": "don't", "does not": "doesn't", "did not": "didn't",
+    "will not": "won't", "would not": "wouldn't", "should not": "shouldn't",
+    "cannot": "can't", "could not": "couldn't",
+    "is not": "isn't", "are not": "aren't", "was not": "wasn't", "were not": "weren't",
+    "has not": "hasn't", "have not": "haven't", "had not": "hadn't",
+    "it is": "it's", "that is": "that's", "what is": "what's",
+    "they are": "they're", "we are": "we're", "you are": "you're",
+    "i am": "i'm", "he is": "he's", "she is": "she's",
+    "i will": "i'll", "you will": "you'll", "we will": "we'll",
+    "i have": "i've", "you have": "you've", "we have": "we've",
+    "i would": "i'd", "you would": "you'd", "they would": "they'd"
+}
+
+# Context-aware transitions organized by style and relationship
+TRANSITIONS_BY_STYLE = {
+    'academic': {
+        'addition': ["Moreover,", "Furthermore,", "Additionally,", "In addition,"],
+        'contrast': ["However,", "Nevertheless,", "Nonetheless,", "Conversely,"],
+        'cause': ["Therefore,", "Thus,", "Hence,", "Consequently,"],
+        'emphasis': ["Indeed,", "Notably,", "Particularly,", "Significantly,"],
+    },
+    'formal': {
+        'addition': ["Furthermore,", "Moreover,", "In addition,"],
+        'contrast': ["However,", "Nevertheless,", "Notwithstanding,"],
+        'cause': ["Therefore,", "Consequently,", "Accordingly,"],
+        'emphasis': ["Indeed,", "Notably,", "Significantly,"],
+    },
+    'casual': {
+        'addition': ["Also,", "Plus,", "And,", "Besides,"],
+        'contrast': ["But,", "Though,", "Still,", "Yet,"],
+        'cause': ["So,", "That's why,", "Because of this,"],
+        'emphasis': ["Actually,", "Really,", "In fact,"],
+    },
+    'technical': {
+        'addition': ["Additionally,", "Moreover,", "Furthermore,"],
+        'contrast': ["However,", "Conversely,"],
+        'cause': ["Therefore,", "Thus,", "Consequently,"],
+        'emphasis': ["Notably,", "Significantly,"],
+    },
+    'creative': {
+        'addition': ["What's more,", "Besides,", "Also,", "And,"],
+        'contrast': ["Yet,", "Still,", "Even so,", "On the other hand,"],
+        'cause': ["So,", "Thus,", "As a result,"],
+        'emphasis': ["Interestingly,", "Remarkably,", "Surprisingly,"],
+    },
+    'general': {  # Fallback
+        'addition': ["Moreover,", "Additionally,", "Furthermore,", "Also,"],
+        'contrast': ["However,", "Nevertheless,", "Yet,", "Still,"],
+        'cause': ["Therefore,", "Thus,", "So,", "Consequently,"],
+        'emphasis': ["Indeed,", "In fact,", "Notably,"],
+    }
 }
 
 # Technical/domain terms that should NEVER be replaced
@@ -167,8 +265,16 @@ def expand_contractions(sentence):
             expanded.append(t)
     return " ".join(expanded)
 
-def replace_synonyms(sentence, p_syn=0.2):
-    """Smart synonym replacement with technical term protection and quality filtering."""
+def add_contractions(sentence):
+    """Add contractions for casual style."""
+    for expansion, contraction in expansion_to_contraction.items():
+        # Case-insensitive replacement
+        pattern = re.compile(re.escape(expansion), re.IGNORECASE)
+        sentence = pattern.sub(contraction, sentence)
+    return sentence
+
+def replace_synonyms(sentence, p_syn=0.2, formality='neutral'):
+    """Smart synonym replacement with style-aware formality."""
     if not nlp:
         return sentence
 
@@ -186,24 +292,24 @@ def replace_synonyms(sentence, p_syn=0.2):
             new_tokens.append(token.text)
             continue
         
-        # NEW: Skip protected technical terms
+        # Skip protected technical terms
         if token.text.lower() in PROTECTED_TERMS:
             new_tokens.append(token.text)
             continue
         
-        # NEW: Skip very common/generic words
-        if token.text.lower() in SKIP_COMMON_WORDS:
+        # Skip very common/generic words (unless casual style wants simpler)
+        if token.text.lower() in SKIP_COMMON_WORDS and formality != 'casual':
             new_tokens.append(token.text)
             continue
         
-        # NEW: Skip proper nouns (names, places, etc.)
+        # Skip proper nouns (names, places, etc.)
         if token.pos_ == "PROPN":
             new_tokens.append(token.text)
             continue
         
         # Try replacement with probability
         if wordnet.synsets(token.text) and random.random() < p_syn:
-            synonyms = get_smart_synonyms(token.text, token.pos_, sentence)
+            synonyms = get_smart_synonyms(token.text, token.pos_, sentence, formality)
             if synonyms:
                 new_tokens.append(random.choice(synonyms))
             else:
@@ -213,9 +319,9 @@ def replace_synonyms(sentence, p_syn=0.2):
     
     return " ".join(new_tokens)
 
-def add_academic_transition(sentence, prev_sentence=None, used_transitions=None, p_transition=0.2):
+def add_academic_transition(sentence, prev_sentence=None, used_transitions=None, p_transition=0.2, style='general'):
     """
-    Context-aware transition addition that matches sentence relationship.
+    Style-aware transition addition that matches sentence relationship.
     Tracks used transitions to avoid repetition.
     """
     if random.random() >= p_transition:
@@ -225,9 +331,13 @@ def add_academic_transition(sentence, prev_sentence=None, used_transitions=None,
     first_word = sentence.split()[0] if sentence.split() else ""
     existing_transitions = ['moreover', 'however', 'therefore', 'furthermore', 
                            'additionally', 'consequently', 'nevertheless', 'thus',
-                           'hence', 'indeed', 'besides', 'likewise', 'also']
+                           'hence', 'indeed', 'besides', 'likewise', 'also', 'plus',
+                           'but', 'so', 'yet', 'still', 'actually', 'really']
     if first_word.lower().rstrip(',') in existing_transitions:
         return sentence
+    
+    # Get transitions for this style
+    style_transitions = TRANSITIONS_BY_STYLE.get(style, TRANSITIONS_BY_STYLE['general'])
     
     # Determine appropriate transition type based on previous sentence
     if prev_sentence and nlp:
@@ -241,12 +351,12 @@ def add_academic_transition(sentence, prev_sentence=None, used_transitions=None,
         elif relationship in ['addition', 'none']:
             transition_type = 'addition'
         else:
-            transition_type = 'general'
+            transition_type = 'addition'  # Default to addition
     else:
-        transition_type = 'general'
+        transition_type = 'addition'
     
     # Get appropriate transitions for this type
-    available_transitions = ACADEMIC_TRANSITIONS.get(transition_type, ACADEMIC_TRANSITIONS['general'])
+    available_transitions = style_transitions.get(transition_type, style_transitions['addition'])
     
     # Filter out recently used transitions if tracking is enabled
     if used_transitions is not None:
@@ -264,10 +374,9 @@ def add_academic_transition(sentence, prev_sentence=None, used_transitions=None,
     
     return f"{transition} {sentence}"
 
-def get_smart_synonyms(word, pos, sentence_context=""):
+def get_smart_synonyms(word, pos, sentence_context="", formality='neutral'):
     """
-    Get quality-filtered synonyms that fit the context.
-    Filters out archaic, rare, and inappropriate synonyms.
+    Get quality-filtered synonyms that fit the context and formality level.
     """
     wn_pos = None
     if pos.startswith("ADJ"):
@@ -298,35 +407,42 @@ def get_smart_synonyms(word, pos, sentence_context=""):
             if lemma_lower == word_lower:
                 continue
             
-            # NEW: Quality filters
-            
-            # Skip very long synonyms (likely archaic/rare)
+            # Quality filters
             if len(lemma_name) > len(word) + 5:
                 continue
-            
-            # Skip if contains underscores or hyphens (often technical/rare)
             if '_' in lemma_name or '-' in lemma_name:
                 continue
-            
-            # Skip if all caps (acronyms)
             if lemma_name.isupper():
                 continue
-            
-            # Skip if has numbers
             if any(char.isdigit() for char in lemma_name):
                 continue
-            
-            # Skip very rare/archaic words (heuristic: uncommon letter combos)
             if any(rare in lemma_lower for rare in ['ae', 'oe', 'ough', 'augh']):
                 continue
             
-            # Prefer shorter synonyms (usually more common)
-            synonyms.append((lemma_name, lemma.count()))
+            # Formality filtering
+            if formality == 'formal':
+                # Prefer longer, more sophisticated words
+                if len(lemma_name) < len(word) - 2:
+                    continue
+            elif formality == 'casual':
+                # Prefer shorter, simpler words
+                if len(lemma_name) > len(word) + 2:
+                    continue
+            
+            synonyms.append((lemma_name, lemma.count(), len(lemma_name)))
     
-    # Sort by frequency (WordNet lemma count) and prefer common ones
-    synonyms.sort(key=lambda x: x[1], reverse=True)
+    # Sort by formality preference
+    if formality == 'formal':
+        # Prefer longer words
+        synonyms.sort(key=lambda x: (x[1], x[2]), reverse=True)
+    elif formality == 'casual':
+        # Prefer shorter words
+        synonyms.sort(key=lambda x: (x[1], -x[2]), reverse=True)
+    else:
+        # Prefer common words
+        synonyms.sort(key=lambda x: x[1], reverse=True)
     
-    # Return top 5 most common synonyms
+    # Return top 5
     return [syn[0] for syn in synonyms[:5]]
 
 def get_synonyms(word, pos):
@@ -973,14 +1089,41 @@ def add_quantifier_hedging(sentence, doc):
 ########################################
 # Step 3: Enhanced "Humanize" line-by-line
 ########################################
-def minimal_humanize_line(line, prev_line=None, used_transitions=None, p_syn=0.2, p_trans=0.2, p_hedge=0.15):
-    line = expand_contractions(line)
-    line = replace_synonyms(line, p_syn=p_syn)
+def minimal_humanize_line(line, prev_line=None, used_transitions=None, config=None):
+    """Apply all transformations to a single line with style configuration."""
+    if config is None:
+        config = {}
+    
+    # Extract config with defaults
+    p_syn = config.get('synonym_probability', 0.2)
+    p_trans = config.get('transition_probability', 0.2)
+    p_hedge = config.get('hedging_probability', 0.15)
+    formality = config.get('synonym_formality', 'neutral')
+    style = config.get('transition_style', 'general')
+    expand_contr = config.get('expand_contractions', True)
+    add_contr = config.get('add_contractions', False)
+    
+    # Apply transformations
+    if expand_contr:
+        line = expand_contractions(line)
+    
+    line = replace_synonyms(line, p_syn=p_syn, formality=formality)
     line = add_hedging(line, p_hedge=p_hedge)
-    line = add_academic_transition(line, prev_sentence=prev_line, used_transitions=used_transitions, p_transition=p_trans)
+    line = add_academic_transition(line, prev_sentence=prev_line, used_transitions=used_transitions, 
+                                   p_transition=p_trans, style=style)
+    
+    if add_contr:
+        line = add_contractions(line)
+    
     return line
 
-def minimal_rewriting(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=0.3):
+def minimal_rewriting(text, config=None):
+    """Rewrite text with style configuration."""
+    if config is None:
+        config = {}
+    
+    p_combine = config.get('sentence_combine_probability', 0.3)
+    
     lines = sent_tokenize(text)
     
     # Track used transitions to avoid repetition
@@ -994,9 +1137,7 @@ def minimal_rewriting(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=0.3)
             ln, 
             prev_line=prev_ln,
             used_transitions=used_transitions,
-            p_syn=p_syn, 
-            p_trans=p_trans, 
-            p_hedge=p_hedge
+            config=config
         )
         out_lines.append(transformed)
     
@@ -1008,16 +1149,22 @@ def minimal_rewriting(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=0.3)
 ########################################
 # Main API Function
 ########################################
-def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=0.3):
+def humanize_text_minimal(text, style='balanced', **overrides):
     """
-    Humanize text with minimal changes while preserving citations.
+    Humanize text with style profiles and optional overrides.
     
     Args:
         text: Input text to humanize
-        p_syn: Probability of synonym replacement (0.0-1.0)
-        p_trans: Probability of adding academic transitions (0.0-1.0)
-        p_hedge: Probability of adding hedging language (0.0-1.0)
-        p_combine: Probability of combining short sentences (0.0-1.0)
+        style: Style profile ('academic', 'formal', 'casual', 'technical', 'creative', 'balanced')
+        **overrides: Override any specific parameters:
+            - synonym_probability
+            - transition_probability  
+            - hedging_probability
+            - sentence_combine_probability
+            - synonym_formality
+            - transition_style
+            - expand_contractions
+            - add_contractions
     
     Returns:
         Dictionary with original and humanized text, plus word/sentence counts
@@ -1025,17 +1172,20 @@ def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=
     orig_wc = count_words(text)
     orig_sc = count_sentences(text)
     
+    # Load style profile
+    if style in STYLE_PROFILES:
+        config = STYLE_PROFILES[style].copy()
+    else:
+        config = STYLE_PROFILES['balanced'].copy()
+    
+    # Apply overrides
+    config.update(overrides)
+    
     # Extract citations
     no_refs_text, placeholders = extract_citations(text)
     
-    # Rewrite text with all transformations
-    partially_rewritten = minimal_rewriting(
-        no_refs_text, 
-        p_syn=p_syn, 
-        p_trans=p_trans,
-        p_hedge=p_hedge,
-        p_combine=p_combine
-    )
+    # Rewrite text with configuration
+    partially_rewritten = minimal_rewriting(no_refs_text, config=config)
     
     # Restore citations
     final_text = restore_citations(partially_rewritten, placeholders)
@@ -1054,5 +1204,7 @@ def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=
         "original_word_count": orig_wc,
         "humanized_word_count": new_wc,
         "original_sentence_count": orig_sc,
-        "humanized_sentence_count": new_sc
+        "humanized_sentence_count": new_sc,
+        "style_used": style
     }
+

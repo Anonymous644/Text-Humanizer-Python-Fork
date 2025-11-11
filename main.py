@@ -29,10 +29,12 @@ class TextInput(BaseModel):
     
 class HumanizeInput(BaseModel):
     text: str
-    synonym_probability: Optional[float] = 0.2
-    transition_probability: Optional[float] = 0.2
-    hedging_probability: Optional[float] = 0.15
-    sentence_combine_probability: Optional[float] = 0.3
+    style: Optional[str] = 'balanced'  # Style profile
+    # Optional overrides
+    synonym_probability: Optional[float] = None
+    transition_probability: Optional[float] = None
+    hedging_probability: Optional[float] = None
+    sentence_combine_probability: Optional[float] = None
 
 class HumanizeResponse(BaseModel):
     original_text: str
@@ -41,6 +43,7 @@ class HumanizeResponse(BaseModel):
     humanized_word_count: int
     original_sentence_count: int
     humanized_sentence_count: int
+    style_used: str
 
 class DetectResponse(BaseModel):
     text: str
@@ -64,36 +67,58 @@ def root():
 @app.post("/humanize", response_model=HumanizeResponse)
 def humanize_text_endpoint(data: HumanizeInput):
     """
-    Humanize AI-generated text while preserving citations.
+    Humanize AI-generated text with style profiles.
     
     - **text**: The text to humanize
-    - **synonym_probability**: Probability of replacing words with synonyms (0.0-1.0)
-    - **transition_probability**: Probability of adding academic transitions (0.0-1.0)
-    - **hedging_probability**: Probability of adding hedging language (0.0-1.0)
-    - **sentence_combine_probability**: Probability of combining short sentences (0.0-1.0)
+    - **style**: Style profile - 'academic', 'formal', 'casual', 'technical', 'creative', 'balanced' (default)
+    - **synonym_probability**: (Optional override) Probability of replacing words with synonyms (0.0-1.0)
+    - **transition_probability**: (Optional override) Probability of adding transitions (0.0-1.0)
+    - **hedging_probability**: (Optional override) Probability of adding hedging language (0.0-1.0)
+    - **sentence_combine_probability**: (Optional override) Probability of combining short sentences (0.0-1.0)
+    
+    **Style Profiles** (all do maximum humanization, differ in HOW):
+    - **academic**: Formal words, academic transitions, more hedging
+    - **formal**: Professional tone, sophisticated vocabulary
+    - **casual**: Simpler words, casual transitions, contractions, more combining
+    - **technical**: Conservative changes, protects technical terms
+    - **creative**: Varied vocabulary, diverse transitions
+    - **balanced**: Default, moderate in all aspects
     """
     if not data.text or not data.text.strip():
         raise HTTPException(status_code=400, detail="Text input cannot be empty")
     
-    if not (0.0 <= data.synonym_probability <= 1.0):
-        raise HTTPException(status_code=400, detail="synonym_probability must be between 0.0 and 1.0")
+    # Validate style
+    valid_styles = ['academic', 'formal', 'casual', 'technical', 'creative', 'balanced']
+    if data.style not in valid_styles:
+        raise HTTPException(status_code=400, detail=f"style must be one of: {', '.join(valid_styles)}")
     
-    if not (0.0 <= data.transition_probability <= 1.0):
-        raise HTTPException(status_code=400, detail="transition_probability must be between 0.0 and 1.0")
+    # Build overrides dict (only include non-None values)
+    overrides = {}
+    if data.synonym_probability is not None:
+        if not (0.0 <= data.synonym_probability <= 1.0):
+            raise HTTPException(status_code=400, detail="synonym_probability must be between 0.0 and 1.0")
+        overrides['synonym_probability'] = data.synonym_probability
     
-    if not (0.0 <= data.hedging_probability <= 1.0):
-        raise HTTPException(status_code=400, detail="hedging_probability must be between 0.0 and 1.0")
+    if data.transition_probability is not None:
+        if not (0.0 <= data.transition_probability <= 1.0):
+            raise HTTPException(status_code=400, detail="transition_probability must be between 0.0 and 1.0")
+        overrides['transition_probability'] = data.transition_probability
     
-    if not (0.0 <= data.sentence_combine_probability <= 1.0):
-        raise HTTPException(status_code=400, detail="sentence_combine_probability must be between 0.0 and 1.0")
+    if data.hedging_probability is not None:
+        if not (0.0 <= data.hedging_probability <= 1.0):
+            raise HTTPException(status_code=400, detail="hedging_probability must be between 0.0 and 1.0")
+        overrides['hedging_probability'] = data.hedging_probability
+    
+    if data.sentence_combine_probability is not None:
+        if not (0.0 <= data.sentence_combine_probability <= 1.0):
+            raise HTTPException(status_code=400, detail="sentence_combine_probability must be between 0.0 and 1.0")
+        overrides['sentence_combine_probability'] = data.sentence_combine_probability
     
     try:
         result = humanize_text_minimal(
             data.text,
-            p_syn=data.synonym_probability,
-            p_trans=data.transition_probability,
-            p_hedge=data.hedging_probability,
-            p_combine=data.sentence_combine_probability
+            style=data.style,
+            **overrides
         )
         return result
     except Exception as e:
