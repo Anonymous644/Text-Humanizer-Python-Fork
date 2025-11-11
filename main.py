@@ -7,6 +7,7 @@ import uvicorn
 
 from utils.ai_detection_utils import classify_text_hf
 from utils.text_humanizer import humanize_text_minimal
+from utils.model_loaders import get_available_detectors
 
 app = FastAPI(
     title="Text Humanizer & AI Detection API",
@@ -26,6 +27,11 @@ app.add_middleware(
 # Request/Response Models
 class TextInput(BaseModel):
     text: str
+
+class DetectInput(BaseModel):
+    text: str
+    detector_model: Optional[str] = 'gpt2'  # 'gpt2' or 'chatgpt'
+    threshold: Optional[float] = 0.8
     
 class HumanizeInput(BaseModel):
     text: str
@@ -60,11 +66,26 @@ def root():
     """Root endpoint with API information"""
     return {
         "message": "Text Humanizer & AI Detection API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "endpoints": {
-            "/humanize": "POST - Humanize AI-generated text",
-            "/detect": "POST - Detect AI-generated content in text",
+            "/humanize": "POST - Humanize AI-generated text with style profiles",
+            "/detect": "POST - Detect AI-generated content (choose detector model)",
+            "/detectors": "GET - List available AI detector models",
+            "/health": "GET - Health check",
             "/docs": "GET - Interactive API documentation"
+        }
+    }
+
+@app.get("/detectors")
+def list_detectors():
+    """List available AI detector models and their characteristics"""
+    return {
+        "available_models": get_available_detectors(),
+        "default": "gpt2",
+        "recommendation": {
+            "for_modern_ai": "chatgpt",
+            "for_speed": "gpt2",
+            "for_older_ai": "gpt2"
         }
     }
 
@@ -152,25 +173,60 @@ def humanize_text_endpoint(data: HumanizeInput):
         raise HTTPException(status_code=500, detail=f"Error processing text: {str(e)}")
 
 @app.post("/detect", response_model=DetectResponse)
-def detect_ai_text_endpoint(data: TextInput):
+def detect_ai_text_endpoint(data: DetectInput):
     """
-    Detect AI-generated content in text.
+    Detect AI-generated content in text with model selection.
     
-    - **text**: The text to analyze for AI detection
+    - **text**: The text to analyze
+    - **detector_model**: Choose detector - 'gpt2' (default, fast, good for older AI) or 'chatgpt' (better for GPT-3.5/4)
+    - **threshold**: Confidence threshold (0.0-1.0, default 0.8)
+    
+    **Model Comparison:**
+    - **gpt2** (roberta-base-openai-detector):
+      - Faster, smaller memory (~500MB)
+      - Best for: GPT-2, GPT-3, older AI content
+      - Accuracy on GPT-4: ~60-70%
+    
+    - **chatgpt** (Hello-SimpleAI/chatgpt-detector-roberta):
+      - Better on modern AI (~600MB)
+      - Best for: GPT-3.5, GPT-4, ChatGPT, Claude
+      - Accuracy on GPT-4: ~85-90%
     
     Returns classification for each sentence and overall percentages.
     """
     if not data.text or not data.text.strip():
         raise HTTPException(status_code=400, detail="Text input cannot be empty")
     
+    # Validate detector model
+    valid_models = ['gpt2', 'chatgpt']
+    if data.detector_model not in valid_models:
+        raise HTTPException(status_code=400, detail=f"detector_model must be one of: {', '.join(valid_models)}")
+    
+    # Validate threshold
+    if not (0.0 <= data.threshold <= 1.0):
+        raise HTTPException(status_code=400, detail="threshold must be between 0.0 and 1.0")
+    
     try:
-        classification_map, percentages = classify_text_hf(data.text)
+        classification_map, percentages = classify_text_hf(
+            data.text, 
+            threshold=data.threshold,
+            detector_model=data.detector_model
+        )
+        
+        # Calculate overall AI percentage
+        ai_percentage = percentages.get("AI-generated", 0) + percentages.get("AI-generated & AI-refined", 0)
+        human_percentage = percentages.get("Human-written", 0) + percentages.get("Human-written & AI-refined", 0)
         
         return {
             "text": data.text,
             "classification_results": classification_map,
             "percentages": percentages,
-            "summary": percentages
+            "summary": {
+                "total_ai_percentage": round(ai_percentage, 2),
+                "total_human_percentage": round(human_percentage, 2),
+                "detector_model_used": data.detector_model,
+                "threshold_used": data.threshold
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error analyzing text: {str(e)}")

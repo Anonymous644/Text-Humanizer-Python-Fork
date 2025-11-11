@@ -4,12 +4,17 @@ from utils.model_loaders import load_detector_model
 
 nltk.download('punkt', quiet=True)
 
-def classify_text_hf(text, threshold=0.8):
+def classify_text_hf(text, threshold=0.8, detector_model='gpt2'):
     """
-    Splits text into sentences, uses roberta-base-openai-detector to classify each sentence
+    Splits text into sentences, uses selected detector to classify each sentence
     as AI-generated or human-written, returning a map of {sentence: label} and overall percentages.
+    
+    Args:
+        text: Input text to classify
+        threshold: Confidence threshold (0.0-1.0)
+        detector_model: 'gpt2' (fast, older AI) or 'chatgpt' (better for modern AI)
     """
-    detector = load_detector_model()
+    detector = load_detector_model(detector_model)
     sentences = sent_tokenize(text)
     results = detector(sentences, truncation=True)
 
