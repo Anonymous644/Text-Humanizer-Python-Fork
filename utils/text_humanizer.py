@@ -48,6 +48,66 @@ CITATION_REGEX = re.compile(
 )
 
 ########################################
+# Text Quality Validation
+########################################
+def validate_text_quality(text):
+    """
+    Validate if text is actual meaningful text or gibberish.
+    Returns (is_valid, error_message)
+    """
+    if not text or not text.strip():
+        return False, "Text is empty"
+    
+    # Check minimum length
+    if len(text.strip()) < 10:
+        return False, "Text too short (minimum 10 characters)"
+    
+    # Tokenize into words
+    tokens = word_tokenize(text.lower())
+    if len(tokens) < 3:
+        return False, "Text must contain at least 3 words"
+    
+    # Get English word list
+    try:
+        from nltk.corpus import words as nltk_words
+        nltk.download('words', quiet=True)
+        english_vocab = set(w.lower() for w in nltk_words.words())
+    except:
+        # Fallback if NLTK words not available - use simpler check
+        # Check if text has reasonable alphabetic content
+        alpha_ratio = sum(c.isalpha() for c in text) / len(text) if text else 0
+        if alpha_ratio < 0.5:
+            return False, "Text appears to be gibberish (too few alphabetic characters)"
+        return True, None  # Skip detailed validation if dictionary not available
+    
+    # Count valid words (at least 2 characters)
+    valid_words = [w for w in tokens if len(w) >= 2 and (w in english_vocab or w.isdigit())]
+    
+    # Calculate percentage of valid English words
+    valid_percentage = (len(valid_words) / len(tokens)) * 100 if tokens else 0
+    
+    # Must have at least 40% valid English words
+    if valid_percentage < 40:
+        return False, f"Text appears to be gibberish (only {valid_percentage:.1f}% recognizable words). Please provide meaningful text."
+    
+    # Check for sentence structure
+    sentences = sent_tokenize(text)
+    if len(sentences) == 0:
+        return False, "Text has no recognizable sentence structure"
+    
+    # Check if text is mostly punctuation or special characters
+    alpha_chars = sum(c.isalpha() for c in text)
+    if alpha_chars / len(text) < 0.5:
+        return False, "Text contains too many non-alphabetic characters"
+    
+    # Check for repetitive patterns (e.g., "asdf asdf asdf")
+    word_set = set([w.lower() for w in tokens if len(w) > 2])
+    if len(word_set) < len(tokens) * 0.3 and len(tokens) > 10:
+        return False, "Text appears to be repetitive or nonsensical"
+    
+    return True, None
+
+########################################
 # Helper: Word & Sentence Counts
 ########################################
 def count_words(text):

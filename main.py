@@ -6,7 +6,7 @@ from typing import Dict, Optional, Any
 import uvicorn
 
 from utils.ai_detection_utils import classify_text_hf, classify_text_ensemble
-from utils.text_humanizer import humanize_text_minimal
+from utils.text_humanizer import humanize_text_minimal, validate_text_quality
 from utils.model_loaders import get_available_detectors
 
 app = FastAPI(
@@ -120,6 +120,11 @@ def humanize_text_endpoint(data: HumanizeInput):
     """
     if not data.text or not data.text.strip():
         raise HTTPException(status_code=400, detail="Text input cannot be empty")
+    
+    # Validate text quality (check for gibberish)
+    is_valid, error_msg = validate_text_quality(data.text)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
     
     # Validate style
     valid_styles = ['academic', 'formal', 'casual', 'technical', 'creative', 'balanced']
