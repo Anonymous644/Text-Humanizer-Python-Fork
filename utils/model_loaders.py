@@ -7,12 +7,20 @@ DETECTOR_MODELS = {
     'gpt2': {
         'name': 'roberta-base-openai-detector',
         'description': 'Original GPT-2 detector (fast, good for older AI)',
-        'best_for': 'GPT-2, GPT-3'
+        'best_for': 'GPT-2, GPT-3',
+        'accuracy': 'High on GPT-2/3, Medium on GPT-4'
     },
     'chatgpt': {
         'name': 'Hello-SimpleAI/chatgpt-detector-roberta',
-        'description': 'ChatGPT detector (better for GPT-3.5/4)',
-        'best_for': 'GPT-3.5, GPT-4, ChatGPT'
+        'description': 'ChatGPT detector (trained on ChatGPT outputs)',
+        'best_for': 'GPT-3.5, GPT-4, ChatGPT',
+        'accuracy': 'Variable - may need threshold adjustment'
+    },
+    'ensemble': {
+        'name': 'ensemble',
+        'description': 'Uses BOTH detectors and votes for higher accuracy',
+        'best_for': 'Maximum accuracy, all AI models',
+        'accuracy': 'Highest - combines both models'
     }
 }
 
