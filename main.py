@@ -30,11 +30,15 @@ class TextInput(BaseModel):
 class HumanizeInput(BaseModel):
     text: str
     style: Optional[str] = 'balanced'  # Style profile
-    # Optional overrides
+    # Optional overrides for probabilities
     synonym_probability: Optional[float] = None
     transition_probability: Optional[float] = None
     hedging_probability: Optional[float] = None
     sentence_combine_probability: Optional[float] = None
+    # NEW: Optional overrides for human-like features
+    human_imperfections: Optional[bool] = None
+    style_variation: Optional[float] = None
+    sentence_restructure: Optional[float] = None
 
 class HumanizeResponse(BaseModel):
     original_text: str
@@ -75,14 +79,23 @@ def humanize_text_endpoint(data: HumanizeInput):
     - **transition_probability**: (Optional override) Probability of adding transitions (0.0-1.0)
     - **hedging_probability**: (Optional override) Probability of adding hedging language (0.0-1.0)
     - **sentence_combine_probability**: (Optional override) Probability of combining short sentences (0.0-1.0)
+    - **human_imperfections**: (Optional override) Add natural human errors/patterns (true/false)
+    - **style_variation**: (Optional override) Vary formality within text (0.0-1.0)
+    - **sentence_restructure**: (Optional override) Probability of restructuring sentences (0.0-1.0)
     
     **Style Profiles** (all do maximum humanization, differ in HOW):
-    - **academic**: Formal words, academic transitions, more hedging
-    - **formal**: Professional tone, sophisticated vocabulary
-    - **casual**: Simpler words, casual transitions, contractions, more combining
-    - **technical**: Conservative changes, protects technical terms
-    - **creative**: Varied vocabulary, diverse transitions
-    - **balanced**: Default, moderate in all aspects
+    - **academic**: Formal words, academic transitions, more hedging, NO imperfections
+    - **formal**: Professional tone, sophisticated vocabulary, NO imperfections
+    - **casual**: Simpler words, casual transitions, contractions, WITH imperfections
+    - **technical**: Conservative changes, protects technical terms, NO imperfections
+    - **creative**: Varied vocabulary, diverse transitions, WITH imperfections
+    - **balanced**: Default, moderate in all aspects, WITH imperfections
+    
+    **NEW Human-like Features:**
+    - **Minor errors**: Occasional double spaces, inconsistent Oxford commas, natural fillers
+    - **Varied structures**: Move prepositional phrases, reorder clauses
+    - **Style inconsistency**: Mix formal/casual words within same text (like humans do!)
+    - **Sentence variety**: Different lengths and structures throughout
     """
     if not data.text or not data.text.strip():
         raise HTTPException(status_code=400, detail="Text input cannot be empty")
@@ -113,6 +126,20 @@ def humanize_text_endpoint(data: HumanizeInput):
         if not (0.0 <= data.sentence_combine_probability <= 1.0):
             raise HTTPException(status_code=400, detail="sentence_combine_probability must be between 0.0 and 1.0")
         overrides['sentence_combine_probability'] = data.sentence_combine_probability
+    
+    # NEW: Human-like feature overrides
+    if data.human_imperfections is not None:
+        overrides['human_imperfections'] = data.human_imperfections
+    
+    if data.style_variation is not None:
+        if not (0.0 <= data.style_variation <= 1.0):
+            raise HTTPException(status_code=400, detail="style_variation must be between 0.0 and 1.0")
+        overrides['style_variation'] = data.style_variation
+    
+    if data.sentence_restructure is not None:
+        if not (0.0 <= data.sentence_restructure <= 1.0):
+            raise HTTPException(status_code=400, detail="sentence_restructure must be between 0.0 and 1.0")
+        overrides['sentence_restructure'] = data.sentence_restructure
     
     try:
         result = humanize_text_minimal(
