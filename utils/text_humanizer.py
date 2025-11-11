@@ -1,10 +1,10 @@
+# utils/text_humanizer.py
 import random
 import re
 import ssl
 import warnings
 import nltk
 import spacy
-import streamlit as st
 from nltk.corpus import wordnet
 from nltk.tokenize import sent_tokenize, word_tokenize
 
@@ -24,18 +24,21 @@ def download_nltk_resources():
     resources = ['punkt', 'averaged_perceptron_tagger',
                  'punkt_tab', 'wordnet', 'averaged_perceptron_tagger_eng']
     for r in resources:
-        nltk.download(r, quiet=True)
+        try:
+            nltk.download(r, quiet=True)
+        except:
+            pass
 
 download_nltk_resources()
 
 ########################################
-# Prepare spaCy pipeline
+# Load spaCy pipeline
 ########################################
+nlp = None
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
-    st.warning("spaCy en_core_web_sm model not found. Install with: python -m spacy download en_core_web_sm")
-    nlp = None
+    print("Warning: spaCy en_core_web_sm model not found. Synonym replacement will be limited.")
 
 ########################################
 # Citation Regex
@@ -68,23 +71,25 @@ def extract_citations(text):
 
 PLACEHOLDER_REGEX = re.compile(r"\[\s*\[\s*REF_(\d+)\s*\]\s*\]")
 
-
 def restore_citations(text, placeholder_map):
-
     def replace_placeholder(match):
         placeholder = match.group(0)
         return placeholder_map.get(placeholder, placeholder)
-
+    
     restored = PLACEHOLDER_REGEX.sub(replace_placeholder, text)
     return restored
-
 
 ########################################
 # Step 2: Expansions, Synonyms, & Transitions
 ########################################
 contraction_map = {
-    "n't": " not", "'re": " are", "'s": " is", "'ll": " will",
-    "'ve": " have", "'d": " would", "'m": " am"
+    "n't": " not", 
+    "'re": " are", 
+    "'s": " is", 
+    "'ll": " will",
+    "'ve": " have", 
+    "'d": " would", 
+    "'m": " am"
 }
 
 ACADEMIC_TRANSITIONS = [
@@ -143,13 +148,11 @@ def replace_synonyms(sentence, p_syn=0.2):
             new_tokens.append(token.text)
     return " ".join(new_tokens)
 
-
 def add_academic_transition(sentence, p_transition=0.2):
     if random.random() < p_transition:
         transition = random.choice(ACADEMIC_TRANSITIONS)
         return f"{transition} {sentence}"
     return sentence
-
 
 def get_synonyms(word, pos):
     wn_pos = None
@@ -171,7 +174,6 @@ def get_synonyms(word, pos):
                     synonyms.add(lemma_name)
     return list(synonyms)
 
-
 ########################################
 # Step 3: Minimal "Humanize" line-by-line
 ########################################
@@ -181,7 +183,6 @@ def minimal_humanize_line(line, p_syn=0.2, p_trans=0.2):
     line = add_academic_transition(line, p_transition=p_trans)
     return line
 
-
 def minimal_rewriting(text, p_syn=0.2, p_trans=0.2):
     lines = sent_tokenize(text)
     out_lines = [
@@ -189,63 +190,48 @@ def minimal_rewriting(text, p_syn=0.2, p_trans=0.2):
     ]
     return " ".join(out_lines)
 
-
 ########################################
-# Final: Show Humanize Page
+# Main API Function
 ########################################
-def show_humanize_page():
-    st.title("Humanize AI Text (No T5, faster, keeps references, minimal changes)")
-    st.write(
-        "This approach only expands contractions, optionally replaces synonyms, and inserts academic transitions. "
-        "It preserves your APA citations exactly, line by line, without T5 rewriting (which can lose data)."
-    )
+def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2):
+    """
+    Humanize text with minimal changes while preserving citations.
+    
+    Args:
+        text: Input text to humanize
+        p_syn: Probability of synonym replacement (0.0-1.0)
+        p_trans: Probability of adding academic transitions (0.0-1.0)
+    
+    Returns:
+        Dictionary with original and humanized text, plus word/sentence counts
+    """
+    orig_wc = count_words(text)
+    orig_sc = count_sentences(text)
+    
+    # Extract citations
+    no_refs_text, placeholders = extract_citations(text)
+    
+    # Rewrite text
+    partially_rewritten = minimal_rewriting(no_refs_text, p_syn=p_syn, p_trans=p_trans)
+    
+    # Restore citations
+    final_text = restore_citations(partially_rewritten, placeholders)
+    
+    # Normalize spaces around punctuation
+    final_text = re.sub(r"\s+([.,;:!?])", r"\1", final_text)
+    final_text = re.sub(r"(\()\s+", r"\1", final_text)
+    final_text = re.sub(r"\s+(\))", r")", final_text)
+    
+    new_wc = count_words(final_text)
+    new_sc = count_sentences(final_text)
+    
+    return {
+        "original_text": text,
+        "humanized_text": final_text,
+        "original_word_count": orig_wc,
+        "humanized_word_count": new_wc,
+        "original_sentence_count": orig_sc,
+        "humanized_sentence_count": new_sc
+    }
 
-    input_text = st.text_area("Enter text to humanize", height=200)
-    p_syn = st.slider("Synonym Replacement Probability", 0.0, 1.0, 0.2, 0.05)
-    p_trans = st.slider("Academic Transition Probability", 0.0, 1.0, 0.2, 0.05)
 
-    if st.button("Humanize"):
-        if not input_text.strip():
-            st.warning("Please enter some text first.")
-            return
-
-        orig_wc = count_words(input_text)
-        orig_sc = count_sentences(input_text)
-
-        with st.spinner("Rewriting text..."):
-            no_refs_text, placeholders = extract_citations(input_text)
-            partially_rewritten = minimal_rewriting(
-                no_refs_text, p_syn=p_syn, p_trans=p_trans
-            )
-            final_text = restore_citations(partially_rewritten, placeholders)
-
-        # Normalize spaces around punctuation
-        final_text = re.sub(
-            r"\s+([.,;:!?])", r"\1", final_text
-        )  # Remove spaces before punctuation
-        final_text = re.sub(
-            r"(\()\s+", r"\1", final_text
-        )  # Remove spaces after opening parenthesis
-        final_text = re.sub(
-            r"\s+(\))", r")", final_text
-        )  # Remove spaces before closing parenthesis
-
-        new_wc = count_words(final_text)
-        new_sc = count_sentences(final_text)
-
-        st.subheader("Humanized Output")
-        st.text_area("Result", final_text, height=200)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"**Original Word Count:** {orig_wc}")
-            st.markdown(f"**Original Sentence Count:** {orig_sc}")
-        with col2:
-            st.markdown(f"**Rewritten Word Count:** {new_wc}")
-            st.markdown(f"**Rewritten Sentence Count:** {new_sc}")
-    else:
-        st.info("Adjust probabilities above and click the button to rewrite.")
-
-# Run the app
-if __name__ == "__main__":
-    show_humanize_page()
