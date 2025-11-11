@@ -1,13 +1,21 @@
 # utils/model_loaders.py
-import streamlit as st
 from transformers import pipeline
+from functools import lru_cache
 
-@st.cache_resource
+@lru_cache(maxsize=1)
 def load_detector_model():
-    """Load the roberta-base-openai-detector pipeline for AI text detection."""
+    """
+    Load the roberta-base-openai-detector pipeline for AI text detection.
+    Cached to avoid reloading the model on every request.
+    """
+    print("Loading AI detector model (roberta-base-openai-detector)...")
     return pipeline("text-classification", model="roberta-base-openai-detector")
 
-@st.cache_resource
+@lru_cache(maxsize=1)
 def load_paraphrase_model():
-    """Load the T5-based paraphrasing pipeline (e.g., google/flan-t5-base)."""
+    """
+    Load the T5-based paraphrasing pipeline (e.g., google/flan-t5-base).
+    Cached to avoid reloading the model on every request.
+    """
+    print("Loading T5 paraphrase model (google/flan-t5-base)...")
     return pipeline("text2text-generation", model="google/flan-t5-base")
