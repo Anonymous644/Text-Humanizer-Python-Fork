@@ -92,6 +92,9 @@ STYLE_PROFILES = {
         'transition_style': 'academic',
         'expand_contractions': True,
         'add_contractions': False,
+        'human_imperfections': False,  # Keep academic perfect
+        'style_variation': 0.05,  # Minimal variation
+        'sentence_restructure': 0.10,
     },
     'formal': {
         'synonym_probability': 0.35,
@@ -102,6 +105,9 @@ STYLE_PROFILES = {
         'transition_style': 'formal',
         'expand_contractions': True,
         'add_contractions': False,
+        'human_imperfections': False,  # Keep formal perfect
+        'style_variation': 0.10,
+        'sentence_restructure': 0.15,
     },
     'casual': {
         'synonym_probability': 0.40,
@@ -112,6 +118,9 @@ STYLE_PROFILES = {
         'transition_style': 'casual',
         'expand_contractions': False,
         'add_contractions': True,
+        'human_imperfections': True,  # Add natural imperfections
+        'style_variation': 0.25,  # More variation
+        'sentence_restructure': 0.25,
     },
     'technical': {
         'synonym_probability': 0.30,
@@ -122,6 +131,9 @@ STYLE_PROFILES = {
         'transition_style': 'technical',
         'expand_contractions': True,
         'add_contractions': False,
+        'human_imperfections': False,  # Technical stays clean
+        'style_variation': 0.05,
+        'sentence_restructure': 0.10,
     },
     'creative': {
         'synonym_probability': 0.45,
@@ -132,6 +144,9 @@ STYLE_PROFILES = {
         'transition_style': 'creative',
         'expand_contractions': False,
         'add_contractions': False,
+        'human_imperfections': True,  # Creative can be imperfect
+        'style_variation': 0.30,  # High variation
+        'sentence_restructure': 0.30,
     },
     'balanced': {  # Default
         'synonym_probability': 0.30,
@@ -142,6 +157,9 @@ STYLE_PROFILES = {
         'transition_style': 'general',
         'expand_contractions': True,
         'add_contractions': False,
+        'human_imperfections': True,  # Balanced has some imperfections
+        'style_variation': 0.15,
+        'sentence_restructure': 0.20,
     }
 }
 
@@ -448,6 +466,118 @@ def get_smart_synonyms(word, pos, sentence_context="", formality='neutral'):
 def get_synonyms(word, pos):
     """Legacy function for backward compatibility."""
     return get_smart_synonyms(word, pos, "")
+
+########################################
+# Human-like Imperfections & Variations
+########################################
+
+# Safe minor imperfections (natural human patterns)
+HUMAN_IMPERFECTIONS = {
+    'double_spaces': ['  '],  # Occasional double space
+    'comma_variations': {
+        ', and': ' and',  # Remove Oxford comma sometimes
+        ', or': ' or',
+        ', but': ' but',
+    },
+    'natural_fillers': [
+        'actually', 'basically', 'essentially', 'generally',
+        'typically', 'usually', 'often', 'sometimes'
+    ]
+}
+
+def add_natural_imperfections(sentence, p=0.15):
+    """
+    Add subtle, safe human imperfections that don't break meaning.
+    - Occasional double spaces
+    - Inconsistent Oxford comma usage
+    - Natural filler words
+    """
+    if random.random() >= p:
+        return sentence
+    
+    imperfection_type = random.choice(['space', 'comma', 'filler'])
+    
+    if imperfection_type == 'space' and random.random() < 0.3:
+        # Add occasional double space (subtle)
+        words = sentence.split()
+        if len(words) > 5:
+            pos = random.randint(1, len(words) - 2)
+            words[pos] = words[pos] + ' '  # Extra space after word
+            sentence = ' '.join(words)
+    
+    elif imperfection_type == 'comma' and random.random() < 0.4:
+        # Inconsistent Oxford comma
+        for with_comma, without in HUMAN_IMPERFECTIONS['comma_variations'].items():
+            if with_comma in sentence and random.random() < 0.5:
+                sentence = sentence.replace(with_comma, without, 1)
+                break
+    
+    elif imperfection_type == 'filler' and random.random() < 0.3:
+        # Add natural filler at sentence start
+        if not sentence.split()[0].rstrip(',').lower() in ['moreover', 'however', 'therefore']:
+            filler = random.choice(HUMAN_IMPERFECTIONS['natural_fillers'])
+            sentence = f"{filler.capitalize()}, {sentence[0].lower()}{sentence[1:]}"
+    
+    return sentence
+
+def restructure_sentence(sentence, p=0.2):
+    """
+    Vary sentence structure by reordering clauses or inverting subject/verb.
+    Only applies safe transformations.
+    """
+    if random.random() >= p or not nlp:
+        return sentence
+    
+    doc = nlp(sentence)
+    
+    # Skip short sentences
+    if len(doc) < 6:
+        return sentence
+    
+    # Strategy 1: Move prepositional phrase to front
+    # "The system works in many cases" → "In many cases, the system works"
+    for i, token in enumerate(doc):
+        if token.pos_ == 'ADP' and i > 2:  # Preposition (in, on, for, etc.)
+            # Find end of prepositional phrase
+            phrase_end = i
+            for j in range(i+1, len(doc)):
+                if doc[j].pos_ in ['PUNCT', 'VERB', 'CCONJ']:
+                    phrase_end = j
+                    break
+            
+            if phrase_end > i + 1 and phrase_end < len(doc) - 2:
+                # Move prepositional phrase to front
+                before = doc[:i].text.strip()
+                prep_phrase = doc[i:phrase_end].text.strip()
+                after = doc[phrase_end:].text.strip()
+                
+                if before and after:
+                    return f"{prep_phrase.capitalize()}, {before.lower()} {after}"
+    
+    return sentence
+
+def vary_formality_within_text(sentences, p=0.15):
+    """
+    Introduce slight inconsistencies in formality level across sentences.
+    Makes text feel more human (humans aren't perfectly consistent).
+    """
+    if random.random() >= p:
+        return sentences
+    
+    formality_levels = ['formal', 'neutral', 'casual']
+    current_formality = 'neutral'
+    
+    varied = []
+    for sent in sentences:
+        # Occasionally shift formality
+        if random.random() < p:
+            current_formality = random.choice(formality_levels)
+        
+        # This is more of a flag for other functions to use
+        # The actual variation happens in synonym selection
+        varied.append(sent)
+    
+    return varied
 
 ########################################
 # NEW: Intelligent Sentence Combining
@@ -1089,7 +1219,7 @@ def add_quantifier_hedging(sentence, doc):
 ########################################
 # Step 3: Enhanced "Humanize" line-by-line
 ########################################
-def minimal_humanize_line(line, prev_line=None, used_transitions=None, config=None):
+def minimal_humanize_line(line, prev_line=None, used_transitions=None, config=None, sentence_index=0):
     """Apply all transformations to a single line with style configuration."""
     if config is None:
         config = {}
@@ -1103,17 +1233,36 @@ def minimal_humanize_line(line, prev_line=None, used_transitions=None, config=No
     expand_contr = config.get('expand_contractions', True)
     add_contr = config.get('add_contractions', False)
     
+    # NEW: Human-like features
+    human_imperfections = config.get('human_imperfections', False)
+    style_variation = config.get('style_variation', 0.0)
+    restructure_prob = config.get('sentence_restructure', 0.0)
+    
+    # Vary formality slightly within text (inconsistent style)
+    if style_variation > 0 and random.random() < style_variation:
+        formality_options = ['formal', 'neutral', 'casual']
+        formality = random.choice(formality_options)
+    
     # Apply transformations
     if expand_contr:
         line = expand_contractions(line)
     
     line = replace_synonyms(line, p_syn=p_syn, formality=formality)
     line = add_hedging(line, p_hedge=p_hedge)
+    
+    # Vary sentence structure (restructure before transition)
+    if restructure_prob > 0:
+        line = restructure_sentence(line, p=restructure_prob)
+    
     line = add_academic_transition(line, prev_sentence=prev_line, used_transitions=used_transitions, 
                                    p_transition=p_trans, style=style)
     
     if add_contr:
         line = add_contractions(line)
+    
+    # Add natural human imperfections
+    if human_imperfections:
+        line = add_natural_imperfections(line, p=0.15)
     
     return line
 
@@ -1123,6 +1272,7 @@ def minimal_rewriting(text, config=None):
         config = {}
     
     p_combine = config.get('sentence_combine_probability', 0.3)
+    style_variation = config.get('style_variation', 0.0)
     
     lines = sent_tokenize(text)
     
@@ -1137,12 +1287,17 @@ def minimal_rewriting(text, config=None):
             ln, 
             prev_line=prev_ln,
             used_transitions=used_transitions,
-            config=config
+            config=config,
+            sentence_index=i
         )
         out_lines.append(transformed)
     
     # Intelligently vary sentence length
     out_lines = vary_sentence_length(out_lines, p_combine=p_combine)
+    
+    # Apply style variation across sentences (inconsistent style)
+    if style_variation > 0:
+        out_lines = vary_formality_within_text(out_lines, p=style_variation)
     
     return " ".join(out_lines)
 
