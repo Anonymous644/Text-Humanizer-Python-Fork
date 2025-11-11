@@ -19,9 +19,11 @@ A FastAPI-based backend service for humanizing AI-generated text and detecting A
 
 - Humanizes AI-generated text while preserving APA citations
 - Expands contractions naturally
-- Replaces words with contextual synonyms
-- Adds academic transitions
-- Configurable transformation probabilities
+- Replaces words with contextual synonyms using spaCy + WordNet
+- Adds academic transitions between sentences
+- **NEW:** Adds hedging language to sound more natural and academic
+- **NEW:** Intelligently combines short sentences with semantic analysis
+- Configurable transformation probabilities for fine control
 
 ## Installation
 
@@ -74,7 +76,9 @@ Humanize AI-generated text while preserving citations.
 {
   "text": "Your AI-generated text here...",
   "synonym_probability": 0.2,
-  "transition_probability": 0.2
+  "transition_probability": 0.2,
+  "hedging_probability": 0.15,
+  "sentence_combine_probability": 0.3
 }
 ```
 
@@ -146,7 +150,9 @@ curl -X POST "http://localhost:8000/humanize" \
   -d '{
     "text": "AI is transforming industries. It is creating new opportunities.",
     "synonym_probability": 0.3,
-    "transition_probability": 0.2
+    "transition_probability": 0.2,
+    "hedging_probability": 0.15,
+    "sentence_combine_probability": 0.3
   }'
 ```
 
@@ -171,7 +177,9 @@ response = requests.post(
     json={
         "text": "Your AI text here...",
         "synonym_probability": 0.2,
-        "transition_probability": 0.2
+        "transition_probability": 0.2,
+        "hedging_probability": 0.15,
+        "sentence_combine_probability": 0.3
     }
 )
 result = response.json()
@@ -253,11 +261,13 @@ Text-Humanizer-Python-Fork/
 
 ### Humanize Endpoint
 
-| Parameter                | Type   | Default  | Range   | Description                                  |
-| ------------------------ | ------ | -------- | ------- | -------------------------------------------- |
-| `text`                   | string | required | -       | Text to humanize                             |
-| `synonym_probability`    | float  | 0.2      | 0.0-1.0 | Probability of replacing words with synonyms |
-| `transition_probability` | float  | 0.2      | 0.0-1.0 | Probability of adding academic transitions   |
+| Parameter                      | Type   | Default  | Range   | Description                                                            |
+| ------------------------------ | ------ | -------- | ------- | ---------------------------------------------------------------------- |
+| `text`                         | string | required | -       | Text to humanize                                                       |
+| `synonym_probability`          | float  | 0.2      | 0.0-1.0 | Probability of replacing words with synonyms                           |
+| `transition_probability`       | float  | 0.2      | 0.0-1.0 | Probability of adding academic transitions                             |
+| `hedging_probability`          | float  | 0.15     | 0.0-1.0 | Probability of adding hedging language (e.g., "generally", "tends to") |
+| `sentence_combine_probability` | float  | 0.3      | 0.0-1.0 | Probability of intelligently combining short sentences                 |
 
 ### Detect Endpoint
 

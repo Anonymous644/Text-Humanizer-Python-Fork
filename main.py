@@ -31,6 +31,8 @@ class HumanizeInput(BaseModel):
     text: str
     synonym_probability: Optional[float] = 0.2
     transition_probability: Optional[float] = 0.2
+    hedging_probability: Optional[float] = 0.15
+    sentence_combine_probability: Optional[float] = 0.3
 
 class HumanizeResponse(BaseModel):
     original_text: str
@@ -67,6 +69,8 @@ def humanize_text_endpoint(data: HumanizeInput):
     - **text**: The text to humanize
     - **synonym_probability**: Probability of replacing words with synonyms (0.0-1.0)
     - **transition_probability**: Probability of adding academic transitions (0.0-1.0)
+    - **hedging_probability**: Probability of adding hedging language (0.0-1.0)
+    - **sentence_combine_probability**: Probability of combining short sentences (0.0-1.0)
     """
     if not data.text or not data.text.strip():
         raise HTTPException(status_code=400, detail="Text input cannot be empty")
@@ -77,11 +81,19 @@ def humanize_text_endpoint(data: HumanizeInput):
     if not (0.0 <= data.transition_probability <= 1.0):
         raise HTTPException(status_code=400, detail="transition_probability must be between 0.0 and 1.0")
     
+    if not (0.0 <= data.hedging_probability <= 1.0):
+        raise HTTPException(status_code=400, detail="hedging_probability must be between 0.0 and 1.0")
+    
+    if not (0.0 <= data.sentence_combine_probability <= 1.0):
+        raise HTTPException(status_code=400, detail="sentence_combine_probability must be between 0.0 and 1.0")
+    
     try:
         result = humanize_text_minimal(
             data.text,
             p_syn=data.synonym_probability,
-            p_trans=data.transition_probability
+            p_trans=data.transition_probability,
+            p_hedge=data.hedging_probability,
+            p_combine=data.sentence_combine_probability
         )
         return result
     except Exception as e:
