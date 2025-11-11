@@ -83,13 +83,8 @@ def restore_citations(text, placeholder_map):
 # Step 2: Expansions, Synonyms, & Transitions
 ########################################
 contraction_map = {
-    "n't": " not", 
-    "'re": " are", 
-    "'s": " is", 
-    "'ll": " will",
-    "'ve": " have", 
-    "'d": " would", 
-    "'m": " am"
+    "n't": " not", "'re": " are", "'s": " is", "'ll": " will",
+    "'ve": " have", "'d": " would", "'m": " am"
 }
 
 ACADEMIC_TRANSITIONS = [
@@ -175,25 +170,177 @@ def get_synonyms(word, pos):
     return list(synonyms)
 
 ########################################
-# Step 3: Minimal "Humanize" line-by-line
+# NEW: Intelligent Sentence Combining
 ########################################
-def minimal_humanize_line(line, p_syn=0.2, p_trans=0.2):
+def detect_sentence_relationship(sent1, sent2):
+    """
+    Analyze the logical relationship between two sentences.
+    Returns: 'addition', 'contrast', 'cause', or 'none'
+    """
+    if not nlp:
+        return 'addition'  # Safe default
+    
+    sent1_lower = sent1.lower()
+    sent2_lower = sent2.lower()
+    
+    # Contrast indicators
+    contrast_words = ['however', 'but', 'although', 'despite', 'yet', 
+                     'nevertheless', 'different', 'opposite', 'unlike']
+    if any(word in sent2_lower for word in contrast_words):
+        return 'contrast'
+    
+    # Cause/result indicators  
+    cause_words = ['because', 'since', 'therefore', 'thus', 'so', 
+                  'consequently', 'as a result', 'hence']
+    if any(word in sent2_lower for word in cause_words):
+        return 'cause'
+    
+    # Check if sent2 starts with pronoun referring to sent1 subject
+    if nlp:
+        doc2 = nlp(sent2)
+        first_token = doc2[0] if len(doc2) > 0 else None
+        if first_token and first_token.pos_ == 'PRON' and first_token.text.lower() in ['it', 'this', 'these', 'they']:
+            return 'addition'  # Continuation/elaboration
+    
+    # Default: addition (safe connector)
+    return 'addition'
+
+def get_appropriate_connector(relationship):
+    """
+    Return grammatically correct connector based on sentence relationship.
+    Only returns connectors that work in middle of sentence.
+    """
+    connectors = {
+        'addition': ['and', 'and'],  # Most common, safest
+        'contrast': ['but', 'yet'],   # Contrast
+        'cause': ['so', 'and so'],    # Cause/effect (careful with 'because' - doesn't work mid-sentence)
+        'none': ['and']               # Safe default
+    }
+    
+    return random.choice(connectors.get(relationship, ['and']))
+
+def combine_short_sentences(sent1, sent2):
+    """
+    Intelligently combine two sentences with appropriate connector.
+    Only combines if it makes semantic sense.
+    """
+    # Get relationship
+    relationship = detect_sentence_relationship(sent1, sent2)
+    
+    # Get appropriate connector
+    connector = get_appropriate_connector(relationship)
+    
+    # Combine: "Sent1. Sent2" → "Sent1 and sent2"
+    sent1_clean = sent1.rstrip('.!?')
+    sent2_lower = sent2[0].lower() + sent2[1:] if len(sent2) > 1 else sent2.lower()
+    
+    combined = f"{sent1_clean} {connector} {sent2_lower}"
+    
+    return combined
+
+def vary_sentence_length(sentences, p_combine=0.3):
+    """
+    Intelligently vary sentence length by combining short sentences.
+    Uses semantic analysis to ensure grammatical correctness.
+    """
+    if not sentences:
+        return sentences
+    
+    new_sentences = []
+    i = 0
+    
+    while i < len(sentences):
+        sent = sentences[i]
+        word_count = len(sent.split())
+        
+        # Only combine very short sentences (< 6 words)
+        # AND if there's a next sentence
+        # AND random chance triggers
+        if (word_count < 6 and 
+            i + 1 < len(sentences) and 
+            random.random() < p_combine):
+            
+            next_sent = sentences[i + 1]
+            next_word_count = len(next_sent.split())
+            
+            # Don't combine if result would be too long (> 20 words)
+            if word_count + next_word_count <= 20:
+                combined = combine_short_sentences(sent, next_sent)
+                new_sentences.append(combined)
+                i += 2  # Skip next sentence
+            else:
+                new_sentences.append(sent)
+                i += 1
+        else:
+            new_sentences.append(sent)
+            i += 1
+    
+    return new_sentences
+
+########################################
+# NEW: Add Hedging Language
+########################################
+def add_hedging(sentence, p_hedge=0.15):
+    """
+    Add hedging language to make statements less absolute.
+    Places hedges contextually before verbs or adjectives.
+    """
+    if not nlp or random.random() >= p_hedge:
+        return sentence
+    
+    doc = nlp(sentence)
+    
+    # Hedges for different contexts
+    verb_hedges = ["often", "generally", "typically", "usually", "tends to", "appears to"]
+    adj_hedges = ["relatively", "fairly", "rather", "somewhat", "quite"]
+    
+    # Find main verb or strong adjective
+    for token in doc:
+        # Add hedge before main verb
+        if token.pos_ == "VERB" and token.dep_ in ["ROOT", "ccomp"]:
+            hedge = random.choice(verb_hedges)
+            # Insert hedge before verb
+            pattern = r'\b' + re.escape(token.text) + r'\b'
+            sentence = re.sub(pattern, f"{hedge} {token.text}", sentence, count=1)
+            break
+        
+        # Add hedge before strong adjective
+        elif token.pos_ == "ADJ" and token.text.lower() in ['significant', 'important', 'critical', 'essential', 'major']:
+            hedge = random.choice(adj_hedges)
+            pattern = r'\b' + re.escape(token.text) + r'\b'
+            sentence = re.sub(pattern, f"{hedge} {token.text}", sentence, count=1)
+            break
+    
+    return sentence
+
+########################################
+# Step 3: Enhanced "Humanize" line-by-line
+########################################
+def minimal_humanize_line(line, p_syn=0.2, p_trans=0.2, p_hedge=0.15):
     line = expand_contractions(line)
     line = replace_synonyms(line, p_syn=p_syn)
+    line = add_hedging(line, p_hedge=p_hedge)  # NEW
     line = add_academic_transition(line, p_transition=p_trans)
     return line
 
-def minimal_rewriting(text, p_syn=0.2, p_trans=0.2):
+def minimal_rewriting(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=0.3):
     lines = sent_tokenize(text)
+    
+    # Apply transformations to each sentence
     out_lines = [
-        minimal_humanize_line(ln, p_syn=p_syn, p_trans=p_trans) for ln in lines
+        minimal_humanize_line(ln, p_syn=p_syn, p_trans=p_trans, p_hedge=p_hedge) 
+        for ln in lines
     ]
+    
+    # NEW: Intelligently vary sentence length
+    out_lines = vary_sentence_length(out_lines, p_combine=p_combine)
+    
     return " ".join(out_lines)
 
 ########################################
 # Main API Function
 ########################################
-def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2):
+def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2, p_hedge=0.15, p_combine=0.3):
     """
     Humanize text with minimal changes while preserving citations.
     
@@ -201,6 +348,8 @@ def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2):
         text: Input text to humanize
         p_syn: Probability of synonym replacement (0.0-1.0)
         p_trans: Probability of adding academic transitions (0.0-1.0)
+        p_hedge: Probability of adding hedging language (0.0-1.0)
+        p_combine: Probability of combining short sentences (0.0-1.0)
     
     Returns:
         Dictionary with original and humanized text, plus word/sentence counts
@@ -211,8 +360,14 @@ def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2):
     # Extract citations
     no_refs_text, placeholders = extract_citations(text)
     
-    # Rewrite text
-    partially_rewritten = minimal_rewriting(no_refs_text, p_syn=p_syn, p_trans=p_trans)
+    # Rewrite text with all transformations
+    partially_rewritten = minimal_rewriting(
+        no_refs_text, 
+        p_syn=p_syn, 
+        p_trans=p_trans,
+        p_hedge=p_hedge,
+        p_combine=p_combine
+    )
     
     # Restore citations
     final_text = restore_citations(partially_rewritten, placeholders)
@@ -233,5 +388,3 @@ def humanize_text_minimal(text, p_syn=0.2, p_trans=0.2):
         "original_sentence_count": orig_sc,
         "humanized_sentence_count": new_sc
     }
-
-
