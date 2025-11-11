@@ -278,40 +278,254 @@ def vary_sentence_length(sentences, p_combine=0.3):
     return new_sentences
 
 ########################################
-# NEW: Add Hedging Language
+# NEW: Comprehensive Hedging Language System
 ########################################
+
+# Expanded hedging vocabulary organized by type
+HEDGING_LIBRARY = {
+    # Adverbs of frequency - how often something happens
+    'frequency': [
+        "often", "generally", "typically", "usually", "frequently",
+        "commonly", "normally", "regularly", "ordinarily", "customarily",
+        "sometimes", "occasionally", "periodically", "sporadically"
+    ],
+    
+    # Epistemic stance - degree of certainty
+    'epistemic': [
+        "appears to", "seems to", "tends to", "appears that",
+        "seems that", "suggests that", "indicates that",
+        "may", "might", "could", "would", "should",
+        "possibly", "probably", "likely", "perhaps", "potentially"
+    ],
+    
+    # Approximators - degree/extent modifiers
+    'approximators': [
+        "relatively", "fairly", "rather", "somewhat", "quite",
+        "reasonably", "moderately", "comparatively", "largely",
+        "mostly", "mainly", "primarily", "predominantly",
+        "essentially", "basically", "fundamentally"
+    ],
+    
+    # Quantifiers - amount hedging
+    'quantifiers': [
+        "many", "some", "several", "various", "numerous",
+        "a number of", "a variety of", "certain", "particular",
+        "most", "the majority of", "a large portion of"
+    ],
+    
+    # Evidential markers - source of knowledge
+    'evidential': [
+        "it appears that", "it seems that", "it is likely that",
+        "research suggests", "studies indicate", "evidence shows",
+        "findings suggest", "data indicates", "results demonstrate",
+        "observations suggest", "analysis reveals"
+    ],
+    
+    # Conditional/Hypothetical
+    'conditional': [
+        "may", "might", "could potentially", "would likely",
+        "can", "could possibly", "might possibly"
+    ],
+    
+    # Scope limiters - restricting claims
+    'scope_limiters': [
+        "in many cases", "in most cases", "in some cases",
+        "to some extent", "to a certain degree", "to a large extent",
+        "in general", "on the whole", "for the most part",
+        "by and large", "as a rule"
+    ]
+}
+
+# Strong claim words that benefit from hedging
+STRONG_ADJECTIVES = [
+    'significant', 'important', 'critical', 'essential', 'crucial',
+    'vital', 'key', 'major', 'substantial', 'considerable',
+    'dramatic', 'remarkable', 'notable', 'exceptional', 'outstanding',
+    'definite', 'certain', 'absolute', 'complete', 'total',
+    'perfect', 'ideal', 'optimal', 'superior', 'excellent'
+]
+
+STRONG_VERBS = [
+    'proves', 'demonstrates', 'shows', 'confirms', 'establishes',
+    'determines', 'verifies', 'validates', 'certifies', 'guarantees',
+    'ensures', 'assures', 'solves', 'eliminates', 'prevents',
+    'causes', 'creates', 'produces', 'generates', 'achieves'
+]
+
+STRONG_NOUNS = [
+    'proof', 'evidence', 'fact', 'truth', 'certainty',
+    'solution', 'answer', 'result', 'conclusion', 'finding'
+]
+
 def add_hedging(sentence, p_hedge=0.15):
     """
-    Add hedging language to make statements less absolute.
-    Places hedges contextually before verbs or adjectives.
+    Comprehensive hedging system with multiple strategies.
+    Adds appropriate hedging based on sentence structure and content.
     """
     if not nlp or random.random() >= p_hedge:
         return sentence
     
     doc = nlp(sentence)
+    original_sentence = sentence
+    hedged = False
     
-    # Hedges for different contexts
-    verb_hedges = ["often", "generally", "typically", "usually", "tends to", "appears to"]
-    adj_hedges = ["relatively", "fairly", "rather", "somewhat", "quite"]
+    # Strategy 1: Modal verbs for strong claims (30% of time)
+    if not hedged and random.random() < 0.3:
+        sentence, hedged = add_modal_hedging(sentence, doc)
     
-    # Find main verb or strong adjective
+    # Strategy 2: Frequency adverbs before verbs (25% of time)
+    if not hedged and random.random() < 0.25:
+        sentence, hedged = add_frequency_hedging(sentence, doc)
+    
+    # Strategy 3: Approximators for adjectives (20% of time)
+    if not hedged and random.random() < 0.2:
+        sentence, hedged = add_approximator_hedging(sentence, doc)
+    
+    # Strategy 4: Epistemic stance markers (15% of time)
+    if not hedged and random.random() < 0.15:
+        sentence, hedged = add_epistemic_hedging(sentence, doc)
+    
+    # Strategy 5: Scope limiters at sentence start (10% of time)
+    if not hedged and random.random() < 0.1:
+        sentence, hedged = add_scope_limiter(sentence)
+    
+    return sentence if hedged else original_sentence
+
+def add_modal_hedging(sentence, doc):
+    """Replace or add modal verbs to soften strong claims"""
+    
+    # Replace strong verbs with hedged versions
+    replacements = {
+        'proves': ['suggests', 'indicates', 'may prove', 'appears to prove'],
+        'demonstrates': ['suggests', 'indicates', 'seems to demonstrate', 'may demonstrate'],
+        'shows': ['suggests', 'indicates', 'appears to show', 'tends to show'],
+        'confirms': ['supports', 'suggests', 'may confirm', 'appears to confirm'],
+        'guarantees': ['may ensure', 'likely ensures', 'tends to ensure'],
+        'ensures': ['may ensure', 'helps ensure', 'can ensure'],
+        'is': ['may be', 'could be', 'might be', 'appears to be'],
+        'are': ['may be', 'could be', 'might be', 'appear to be'],
+        'will': ['may', 'might', 'could', 'would likely'],
+        'causes': ['may cause', 'can cause', 'tends to cause'],
+        'solves': ['may solve', 'can help solve', 'tends to solve']
+    }
+    
+    for strong_verb, hedged_versions in replacements.items():
+        pattern = r'\b' + re.escape(strong_verb) + r'\b'
+        if re.search(pattern, sentence, re.IGNORECASE):
+            hedge = random.choice(hedged_versions)
+            sentence = re.sub(pattern, hedge, sentence, count=1, flags=re.IGNORECASE)
+            return sentence, True
+    
+    return sentence, False
+
+def add_frequency_hedging(sentence, doc):
+    """Add frequency adverbs before main verbs"""
+    
     for token in doc:
-        # Add hedge before main verb
-        if token.pos_ == "VERB" and token.dep_ in ["ROOT", "ccomp"]:
-            hedge = random.choice(verb_hedges)
-            # Insert hedge before verb
+        if token.pos_ == "VERB" and token.dep_ in ["ROOT", "ccomp", "xcomp"]:
+            # Skip if already has a frequency adverb
+            if any(child.text.lower() in HEDGING_LIBRARY['frequency'] for child in token.children):
+                continue
+            
+            hedge = random.choice(HEDGING_LIBRARY['frequency'])
             pattern = r'\b' + re.escape(token.text) + r'\b'
-            sentence = re.sub(pattern, f"{hedge} {token.text}", sentence, count=1)
-            break
-        
-        # Add hedge before strong adjective
-        elif token.pos_ == "ADJ" and token.text.lower() in ['significant', 'important', 'critical', 'essential', 'major']:
-            hedge = random.choice(adj_hedges)
-            pattern = r'\b' + re.escape(token.text) + r'\b'
-            sentence = re.sub(pattern, f"{hedge} {token.text}", sentence, count=1)
-            break
+            
+            # Check if we can insert the hedge
+            match = re.search(pattern, sentence)
+            if match:
+                sentence = re.sub(pattern, f"{hedge} {token.text}", sentence, count=1)
+                return sentence, True
     
-    return sentence
+    return sentence, False
+
+def add_approximator_hedging(sentence, doc):
+    """Add approximators before strong adjectives"""
+    
+    for token in doc:
+        if token.pos_ == "ADJ":
+            # Target strong adjectives
+            if token.text.lower() in [adj.lower() for adj in STRONG_ADJECTIVES]:
+                # Skip if already modified
+                if any(child.pos_ == "ADV" for child in token.children):
+                    continue
+                
+                hedge = random.choice(HEDGING_LIBRARY['approximators'])
+                pattern = r'\b' + re.escape(token.text) + r'\b'
+                
+                match = re.search(pattern, sentence)
+                if match:
+                    sentence = re.sub(pattern, f"{hedge} {token.text}", sentence, count=1)
+                    return sentence, True
+    
+    return sentence, False
+
+def add_epistemic_hedging(sentence, doc):
+    """Add epistemic stance markers (appears to, seems to, etc.)"""
+    
+    # Look for main verb
+    for token in doc:
+        if token.pos_ == "VERB" and token.dep_ == "ROOT":
+            # Choose appropriate epistemic marker
+            if token.text.lower() in [v.lower() for v in STRONG_VERBS]:
+                epistemic_phrases = [
+                    "appears to", "seems to", "tends to",
+                    "is likely to", "is believed to"
+                ]
+            else:
+                epistemic_phrases = HEDGING_LIBRARY['epistemic'][:5]  # First 5 are most natural
+            
+            hedge = random.choice(epistemic_phrases)
+            
+            # If hedge ends with 'to', we need the base form of verb
+            if hedge.endswith('to'):
+                pattern = r'\b' + re.escape(token.text) + r'\b'
+                # Get base form if possible
+                base_form = token.lemma_ if hasattr(token, 'lemma_') else token.text
+                sentence = re.sub(pattern, f"{hedge} {base_form}", sentence, count=1)
+                return sentence, True
+    
+    return sentence, False
+
+def add_scope_limiter(sentence):
+    """Add scope limiting phrases at the beginning"""
+    
+    # Don't add if sentence already starts with a hedge
+    first_words = sentence.split()[:3]
+    first_phrase = ' '.join(first_words).lower()
+    
+    existing_hedges = [
+        'generally', 'typically', 'often', 'usually', 'moreover',
+        'furthermore', 'however', 'additionally', 'in fact'
+    ]
+    
+    if any(hedge in first_phrase for hedge in existing_hedges):
+        return sentence, False
+    
+    limiter = random.choice(HEDGING_LIBRARY['scope_limiters'])
+    sentence = f"{limiter}, {sentence[0].lower()}{sentence[1:]}"
+    return sentence, True
+
+def add_quantifier_hedging(sentence, doc):
+    """Add quantifier hedging for overly broad statements"""
+    
+    # Replace absolute quantifiers with hedged ones
+    replacements = {
+        'all': ['many', 'most', 'the majority of'],
+        'every': ['many', 'most'],
+        'always': ['often', 'typically', 'generally'],
+        'never': ['rarely', 'seldom', 'infrequently'],
+        'none': ['few', 'very few'],
+        'everything': ['many things', 'most things']
+    }
+    
+    for absolute, hedged_versions in replacements.items():
+        pattern = r'\b' + re.escape(absolute) + r'\b'
+        if re.search(pattern, sentence, re.IGNORECASE):
+            hedge = random.choice(hedged_versions)
+            sentence = re.sub(pattern, hedge, sentence, count=1, flags=re.IGNORECASE)
+            return sentence, True
+    
+    return sentence, False
 
 ########################################
 # Step 3: Enhanced "Humanize" line-by-line
