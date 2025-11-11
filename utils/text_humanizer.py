@@ -357,9 +357,164 @@ STRONG_NOUNS = [
     'solution', 'answer', 'result', 'conclusion', 'finding'
 ]
 
+########################################
+# NEW: Advanced Safety Checks
+########################################
+
+# Technical/Domain keywords that indicate literal usage (don't hedge these sentences)
+TECHNICAL_INDICATORS = [
+    # Programming/CS
+    'algorithm', 'function', 'method', 'class', 'variable', 'array', 'pointer',
+    'database', 'query', 'SQL', 'API', 'endpoint', 'HTTP', 'JSON', 'XML',
+    'thread', 'process', 'memory', 'CPU', 'cache', 'compile', 'runtime',
+    'syntax', 'parse', 'execute', 'debug', 'exception', 'error', 'stack',
+    
+    # Mathematics
+    'equation', 'theorem', 'formula', 'calculate', 'compute', 'equal',
+    'multiply', 'divide', 'addition', 'subtraction', 'integer', 'decimal',
+    
+    # Technical specifications
+    'specification', 'protocol', 'standard', 'compliance', 'compatible',
+    'version', 'release', 'update', 'patch', 'requirement',
+    
+    # Physical measurements
+    'meter', 'kilogram', 'second', 'volt', 'ampere', 'watt', 'hertz',
+    'celsius', 'fahrenheit', 'degree', 'measurement',
+    
+    # UI/Display (literal "shows")
+    'display', 'screen', 'monitor', 'interface', 'button', 'menu', 'dialog',
+    'window', 'panel', 'tab', 'icon', 'cursor'
+]
+
+# Verbs that have literal meanings and shouldn't be hedged in certain contexts
+LITERAL_VERB_CONTEXTS = {
+    'shows': ['display', 'screen', 'monitor', 'figure', 'table', 'chart', 'graph', 'image'],
+    'displays': ['screen', 'monitor', 'interface', 'system', 'device'],
+    'indicates': ['sign', 'symbol', 'light', 'indicator', 'gauge', 'meter'],
+    'represents': ['symbol', 'notation', 'variable', 'constant', 'figure'],
+    'contains': ['box', 'container', 'array', 'list', 'set', 'collection'],
+    'returns': ['function', 'method', 'call', 'query', 'request'],
+    'produces': ['generator', 'factory', 'builder', 'compiler']
+}
+
+# Patterns that indicate facts/definitions (don't hedge these)
+FACTUAL_PATTERNS = [
+    r'\d+\s*[\+\-\*\/\=]\s*\d+',  # Mathematical expressions: 2 + 2 = 4
+    r'is defined as',              # Definitions
+    r'refers to',                  # References
+    r'means that',                 # Meanings
+    r'by definition',              # Definitions
+    r'is called',                  # Nomenclature
+    r'is known as',                # Nomenclature
+]
+
+def should_skip_hedging(sentence, doc):
+    """
+    Advanced safety check to determine if sentence should NOT be hedged.
+    Returns True if hedging should be skipped.
+    """
+    sentence_lower = sentence.lower()
+    
+    # Check 1: Skip very short sentences (< 4 words)
+    if len(sentence.split()) < 4:
+        return True
+    
+    # Check 2: Skip sentences with technical indicators
+    for indicator in TECHNICAL_INDICATORS:
+        if indicator.lower() in sentence_lower:
+            return True
+    
+    # Check 3: Skip sentences matching factual patterns
+    for pattern in FACTUAL_PATTERNS:
+        if re.search(pattern, sentence_lower):
+            return True
+    
+    # Check 4: Skip questions (already uncertain by nature)
+    if sentence.strip().endswith('?'):
+        return True
+    
+    # Check 5: Skip commands/imperatives
+    if doc and len(doc) > 0:
+        # Check if first token is a verb in imperative form
+        first_token = doc[0]
+        if first_token.pos_ == "VERB" and first_token.tag_ == "VB":
+            return True
+    
+    # Check 6: Skip if sentence has numbers that look like facts/measurements
+    # e.g., "The temperature is 25 degrees"
+    if re.search(r'\d+\s*(percent|%|degrees?|meters?|feet|inches|kg|lb|ml|l\b)', sentence_lower):
+        return True
+    
+    # Check 7: Skip citations (already handled, but double-check)
+    if '[[REF_' in sentence:
+        return True
+    
+    return False
+
+def is_literal_verb_usage(verb_text, sentence, doc):
+    """
+    Detect if a verb is being used literally (not as a claim).
+    
+    Examples:
+    - "The screen shows the menu" → True (literal display)
+    - "The study shows improvement" → False (claim/finding)
+    """
+    verb_lower = verb_text.lower()
+    sentence_lower = sentence.lower()
+    
+    # Check if this verb has literal contexts
+    if verb_lower not in LITERAL_VERB_CONTEXTS:
+        return False
+    
+    # Check if any literal context words appear in the sentence
+    literal_contexts = LITERAL_VERB_CONTEXTS[verb_lower]
+    for context_word in literal_contexts:
+        if context_word in sentence_lower:
+            return True
+    
+    return False
+
+def detect_subject_type(sentence, doc):
+    """
+    Detect the type of subject to determine if hedging is appropriate.
+    
+    Returns:
+    - 'technical': Technical system/object (don't hedge strong claims)
+    - 'research': Research/study claims (hedge these)
+    - 'general': General claims (hedge these)
+    """
+    if not doc:
+        return 'general'
+    
+    sentence_lower = sentence.lower()
+    
+    # Technical subjects
+    technical_subjects = [
+        'the system', 'the algorithm', 'the function', 'the method',
+        'the api', 'the interface', 'the display', 'the screen',
+        'the application', 'the software', 'the program', 'the code'
+    ]
+    
+    for tech_subj in technical_subjects:
+        if tech_subj in sentence_lower:
+            return 'technical'
+    
+    # Research subjects (these SHOULD be hedged)
+    research_subjects = [
+        'the study', 'the research', 'the analysis', 'the investigation',
+        'the findings', 'the results', 'the data', 'the evidence',
+        'the experiment', 'the trial', 'the observation'
+    ]
+    
+    for research_subj in research_subjects:
+        if research_subj in sentence_lower:
+            return 'research'
+    
+    return 'general'
+
 def add_hedging(sentence, p_hedge=0.15):
     """
-    Comprehensive hedging system with multiple strategies.
+    Comprehensive hedging system with multiple strategies and advanced safety checks.
     Adds appropriate hedging based on sentence structure and content.
     """
     if not nlp or random.random() >= p_hedge:
@@ -368,6 +523,17 @@ def add_hedging(sentence, p_hedge=0.15):
     doc = nlp(sentence)
     original_sentence = sentence
     hedged = False
+    
+    # NEW: Advanced safety check - skip if inappropriate
+    if should_skip_hedging(sentence, doc):
+        return sentence
+    
+    # NEW: Detect subject type for context-aware hedging
+    subject_type = detect_subject_type(sentence, doc)
+    
+    # Skip hedging for technical specifications with strong guarantees
+    if subject_type == 'technical' and any(word in sentence.lower() for word in ['guarantees', 'ensures', 'requires']):
+        return sentence
     
     # Strategy 1: Modal verbs for strong claims (30% of time)
     if not hedged and random.random() < 0.3:
@@ -392,7 +558,7 @@ def add_hedging(sentence, p_hedge=0.15):
     return sentence if hedged else original_sentence
 
 def add_modal_hedging(sentence, doc):
-    """Replace or add modal verbs to soften strong claims"""
+    """Replace or add modal verbs to soften strong claims with literal verb detection"""
     
     # Replace strong verbs with hedged versions
     replacements = {
@@ -412,6 +578,10 @@ def add_modal_hedging(sentence, doc):
     for strong_verb, hedged_versions in replacements.items():
         pattern = r'\b' + re.escape(strong_verb) + r'\b'
         if re.search(pattern, sentence, re.IGNORECASE):
+            # NEW: Check for literal verb usage
+            if is_literal_verb_usage(strong_verb, sentence, doc):
+                continue  # Skip this verb, it's being used literally
+            
             hedge = random.choice(hedged_versions)
             sentence = re.sub(pattern, hedge, sentence, count=1, flags=re.IGNORECASE)
             return sentence, True
@@ -419,13 +589,17 @@ def add_modal_hedging(sentence, doc):
     return sentence, False
 
 def add_frequency_hedging(sentence, doc):
-    """Add frequency adverbs before main verbs"""
+    """Add frequency adverbs before main verbs with literal verb detection"""
     
     for token in doc:
         if token.pos_ == "VERB" and token.dep_ in ["ROOT", "ccomp", "xcomp"]:
             # Skip if already has a frequency adverb
             if any(child.text.lower() in HEDGING_LIBRARY['frequency'] for child in token.children):
                 continue
+            
+            # NEW: Check for literal verb usage
+            if is_literal_verb_usage(token.text, sentence, doc):
+                continue  # Skip this verb, it's being used literally
             
             hedge = random.choice(HEDGING_LIBRARY['frequency'])
             pattern = r'\b' + re.escape(token.text) + r'\b'
